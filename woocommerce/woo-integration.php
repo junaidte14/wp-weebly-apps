@@ -1,77 +1,102 @@
 <?php
-//functions for woocommerce integration will go here
-function woowa_paymentProcessForm($params, $pr_id, $final_url, $access_token) {
-    $form_post_url = 'https://' . $_SERVER["HTTP_HOST"] . '/wpwa_payment_process/?pr_id=' . $pr_id;
-    $pr_item_number = esc_html(get_post_meta( $pr_id, 'woowa_product_item_number', true ));
-    get_header();
-    ?>
-    <div class="wrap">
-        <div id="primary" class="content-area">
-            <main id="main" class="site-main" role="main">
-                <style>
-                .card {
-                  box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
-                  max-width: 50%;
-                  margin: auto;
-                  text-align: center;
-                  font-family: arial;
-                }
+/**
+ * Render a minimalist checkout card for the Weebly flow.
+ *
+ * @param array  $params       Query params from phase-2
+ * @param int    $pr_id        WooCommerce product ID
+ * @param string $final_url    URL Weebly will return to after token exchange
+ * @param string $access_token OAuth token to save post-purchase
+ */
+function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) {
 
-                .price {
-                  color: grey;
-                  font-size: 22px;
-                }
-                
-                .card h2, .card p{
-                	padding: 0 15px;
-                }
-                
-                @media(max-width: 767px){
-                	.card {
-                      max-width: 100%;
-                    }
-                }
+	$product = wc_get_product( $pr_id );
+	if ( ! $product || ! $product->is_purchasable() ) {
+		wp_die( __( 'Product not available.', 'wpwa' ) );
+	}
 
-                </style>
-                <?php
-                //place order before sending to checkout
-                $product = get_product($pr_id);
-                $site_id = $params['site_id'];
-                $user_id = $params['user_id'];
-                ?>
-                <div class="wpwa_product_details">
-                	<div class="card">
-                      <img src="<?php echo get_the_post_thumbnail_url($pr_id); ?>" alt="product image" style="width:100%" class="img-responsive">
-                      <h2><?php echo get_the_title($pr_id); ?></h2>
-                      <p class="price"><?php echo wc_price($product->get_price()); ?></p>
-                      <p><?php echo $product->get_short_description(); ?></p>
-                      <form class="cart" action="<?php echo esc_url( apply_filters( 'woocommerce_add_to_cart_form_action',get_permalink( get_option( 'woocommerce_checkout_page_id' ) ) ) );?>" method="post" enctype="multipart/form-data">
-                        <input type="hidden" name="add-to-cart" value="<?php echo esc_attr($product->id); ?>">
-                        <input type="hidden" name="site_id" value="<?php echo esc_attr($site_id); ?>">
-                        <input type="hidden" name="user_id" value="<?php echo esc_attr($user_id); ?>">
-                        <input type="hidden" name="access_token" value="<?php echo esc_attr($access_token); ?>">
-                        <input type="hidden" name="final_url" value="<?php echo esc_attr($final_url); ?>">
-                        <button type="submit">Place Order</button>
-                        </form>
+	/* ── Recurring-vs-one-time details ───────────────────────── */
+	$is_recurring = ( 'yes' === $product->get_meta( WPWA_Recurring::META_KEY_FLAG ) );
 
-                        <div class="warnings" style="padding: 20px 0;">
-                            <p>After completing the payment, you will receive an email contining final URL (final_url). Click on that URL or copy and paste that URL in your browser to complete the app installation process.</p>
-                            <p>If you have any questions, contact us at <a href="https://codoplex.com/contact/" target="_blank">https://codoplex.com/contact/</a> page (mention transaction ID, if applicable).</p>
-                        </div>
-                    </div>
-                </div>
-                
-            </main><!-- #main -->
-        </div><!-- #primary -->
-        
-    </div><!-- .wrap -->
+	$cycle_length = absint( $product->get_meta( WPWA_Recurring::META_CYCLE_LENGTH ) );
+	$cycle_unit   = esc_html( $product->get_meta( WPWA_Recurring::META_CYCLE_UNIT ) );
+	$cycle_price  = $product->get_meta( WPWA_Recurring::META_CYCLE_PRICE );
 
-    <?php 
-        get_footer();
+	$display_price = ( $is_recurring && $cycle_price !== '' )
+		? wc_price( $cycle_price )
+		: wc_price( $product->get_price() );
+
+	$billing_note  = $is_recurring
+		? sprintf( __( 'Recurring every %d %s(s)', 'wpwa' ), $cycle_length, $cycle_unit )
+		: __( 'One-time purchase', 'wpwa' );
+
+	/* ── Params from Weebly callback ─────────────────────────── */
+	$site_id = sanitize_text_field( $params['site_id'] ?? '' );
+	$user_id = sanitize_text_field( $params['user_id'] ?? '' );
+
+	/* ── Output ─────────────────────────────────────────────── */
+	get_header(); ?>
+
+	<style>
+		/* keep CSS minimal; move to file in production */
+		.wpwa-product-wrap{max-width:800px;margin:30px auto;padding:20px}
+		.wpwa-card{box-shadow:0 2px 8px rgba(0,0,0,.1);border-radius:12px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,"Open Sans","Helvetica Neue",sans-serif;background:#fff;text-align:center}
+		.wpwa-card__img{width:100%;max-height:280px;object-fit:cover;display:none}
+		.wpwa-card h2{font-size:24px;margin:20px 0 10px;padding:0 20px}
+		.wpwa-card p{padding:0 20px;font-size:16px;color:#666}
+		.wpwa-card p.price{font-size:20px;color:#444;margin:0 0 15px}
+		.wpwa-billing-note{font-size:14px;color:#777;margin-bottom:15px}
+		.wpwa-card form.cart{margin:20px 0}
+		.wpwa-card form.cart .button{background:#0073aa;color:#fff;padding:12px 30px;font-size:16px;border:none;border-radius:6px;cursor:pointer}
+		.wpwa-card form.cart .button:hover{background:#005f8d}
+		.wpwa-card__notice{background:#f8f9fa;border-top:1px solid #eee;margin-top:30px;padding:15px 20px;font-size:14px;color:#555}
+	</style>
+
+	<div class="wpwa-product-wrap">
+		<div class="wpwa-card">
+
+			<img src="<?php echo esc_url( get_the_post_thumbnail_url( $pr_id ) ); ?>"
+			     alt="<?php echo esc_attr( $product->get_name() ); ?>"
+			     class="wpwa-card__img" />
+
+			<h2><?php echo esc_html( $product->get_name() ); ?></h2>
+
+			<p class="price"><?php echo wp_kses_post( $display_price ); ?></p>
+
+			<p class="wpwa-billing-note"><?php echo esc_html( $billing_note ); ?></p>
+
+			<p><?php echo wp_kses_post( $product->get_short_description() ); ?></p>
+
+			<form class="cart"
+			      action="<?php echo esc_url( get_permalink( wc_get_page_id( 'checkout' ) ) ); ?>"
+			      method="post">
+				<?php wp_nonce_field( 'wpwa_checkout', 'wpwa_nonce' ); ?>
+				<input type="hidden" name="add-to-cart"  value="<?php echo esc_attr( $product->get_id() ); ?>">
+				<input type="hidden" name="site_id"      value="<?php echo esc_attr( $site_id ); ?>">
+				<input type="hidden" name="user_id"      value="<?php echo esc_attr( $user_id ); ?>">
+				<input type="hidden" name="access_token" value="<?php echo esc_attr( $access_token ); ?>">
+				<input type="hidden" name="final_url"    value="<?php echo esc_url( $final_url ); ?>">
+				<button type="submit" class="button alt">
+					<?php esc_html_e( 'Place Order', 'wpwa' ); ?>
+				</button>
+			</form>
+
+			<div class="wpwa-card__notice">
+				<p><?php esc_html_e( 'After completing the payment you will receive an e-mail containing the final URL. Open that URL to finish installation.', 'wpwa' ); ?></p>
+				<p>
+					<?php esc_html_e( 'Questions?', 'wpwa' ); ?>
+					<a href="https://codoplex.com/contact/" target="_blank" rel="noopener">
+						https://codoplex.com/contact/
+					</a>
+				</p>
+			</div>
+
+		</div><!-- .wpwa-card -->
+	</div><!-- .wpwa-product-wrap -->
+
+	<?php get_footer();
 }
 
 //add custom fields in woocommerce products
-
 function display_woowa_products_meta_box( $woowa_products ) {
     // Retrieve current name of the Director and Movie Rating based on review ID
     if ( function_exists('wp_nonce_field') ){
@@ -474,5 +499,96 @@ function woowa_custom_woocommerce_single_product_button() {
 }
 remove_action('woocommerce_single_product_summary', 'woocommerce_template_single_add_to_cart', 30);
 add_action('woocommerce_single_product_summary', 'woowa_custom_woocommerce_single_product_button', 30);
+
+//custom thank you page
+add_action( 'woocommerce_before_thankyou', 'wpwa_show_final_step_notice_multiple_with_names', 20 );
+function wpwa_show_final_step_notice_multiple_with_names( $order ) {
+	if ( ! $order || ! is_a( $order, 'WC_Order' ) ) return;
+
+	$shown_client_ids = [];
+	$weebly_links     = [];
+
+	foreach ( $order->get_items() as $item ) {
+		$product_id = $item->get_product_id();
+		if ( ! $product_id ) continue;
+
+		$product    = wc_get_product( $product_id );
+		$client_id  = get_post_meta( $product_id, 'woowa_product_client_id', true );
+		$product_name = $product ? $product->get_name() : 'Weebly App Product';
+
+		if ( empty( $client_id ) || in_array( $client_id, $shown_client_ids, true ) ) continue;
+
+		$final_url = esc_url( "https://www.weebly.com/app-center/oauth/finish?client_id={$client_id}" );
+		$weebly_links[] = [
+			'name' => $product_name,
+			'url'  => $final_url,
+		];
+		$shown_client_ids[] = $client_id;
+	}
+
+	if ( ! empty( $weebly_links ) ) {
+		echo '<div class="woocommerce-message" style="border-left: 5px solid #cc0000; padding: 15px; margin-top: 20px;">';
+		echo '<strong>⚠️ Final Step Required:</strong><br>';
+		echo 'To complete your app connection, please click the link(s) below for each product:<br><br>';
+		foreach ( $weebly_links as $link ) {
+			echo '<div style="margin-bottom: 10px;">';
+			printf(
+				'<strong>%s:</strong> <a href="%s" target="_blank" style="font-size: 16px; color: #0073aa;">✅ Finish Connecting</a>',
+				esc_html( $link['name'] ),
+				$link['url']
+			);
+			echo '</div>';
+		}
+		echo '</div>';
+	}
+}
+
+// Send "Final Step" email after order is completed
+add_action( 'woocommerce_order_status_completed', 'wpwa_send_final_step_email', 10, 1 );
+function wpwa_send_final_step_email( $order_id ) {
+    $order = wc_get_order( $order_id );
+    if ( ! $order ) {
+        return;
+    }
+
+    $links = [];
+    $shown_client_ids = [];
+
+    foreach ( $order->get_items() as $item ) {
+        $product_id = $item->get_product_id();
+        if ( ! $product_id ) continue;
+
+        $client_id = get_post_meta( $product_id, 'woowa_product_client_id', true );
+        if ( empty( $client_id ) || in_array( $client_id, $shown_client_ids, true ) ) continue;
+
+        $product      = wc_get_product( $product_id );
+        $product_name = $product ? $product->get_name() : 'Weebly App Product';
+        $final_url    = esc_url( "https://www.weebly.com/app-center/oauth/finish?client_id={$client_id}" );
+
+        $links[] = '<p><strong>' . esc_html( $product_name ) . ':</strong> 
+            <a href="' . $final_url . '" 
+            style="background:#0073aa;color:#fff;padding:8px 12px;text-decoration:none;border-radius:4px;" 
+            target="_blank">✅ Finish Connecting</a></p>';
+
+        $shown_client_ids[] = $client_id;
+    }
+
+    if ( empty( $links ) ) {
+        return;
+    }
+
+    $to       = $order->get_billing_email();
+    $subject  = '⚠️ Action Required: Complete Your App Installation';
+    $headers  = [ 'Content-Type: text/html; charset=UTF-8' ];
+
+    $message  = '<p>Hi ' . esc_html( $order->get_billing_first_name() ) . ',</p>';
+    $message .= '<p><strong>One final step is required to activate your app(s).</strong></p>';
+    $message .= '<p>Please click the button(s) below to finish connecting your app(s):</p>';
+    $message .= implode( '', $links );
+    $message .= '<p>⚠️ Without completing this step, your app will not be fully installed.</p>';
+    $message .= '<p>Thank you,<br>The Support Team</p>';
+
+    wp_mail( $to, $subject, $message, $headers );
+}
 
 ?>

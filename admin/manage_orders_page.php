@@ -12,6 +12,11 @@
           $payable_amount = isset($_GET['payable_amount']) ? $_GET['payable_amount']: '';
           $access_token = isset($_GET['access_token']) ? $_GET['access_token']: '';
           $app_name = isset($_GET['app_name']) ? $_GET['app_name']: '';
+		    //echo $gross_amount;
+			//echo '<br>';
+			//echo $payable_amount;
+			//echo '<br>';
+			//echo $access_token;
           if($gross_amount != '' && $payable_amount != '' && $access_token != ''){
               $curl = curl_init();
               curl_setopt_array($curl, array(
