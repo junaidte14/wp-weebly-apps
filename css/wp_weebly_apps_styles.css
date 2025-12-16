@@ -1,0 +1,41 @@
+.codo_stat_circle
+{
+  	width: 100px;
+	height: 100px;
+	background: #253b80;
+	-moz-border-radius: 50px;
+	-webkit-border-radius: 50px;
+	border-radius: 50px;
+  	margin: 0 auto;
+}
+.codo_stat_circle .count
+{
+  line-height: 100px;
+  color:white;
+  font-size:25px;
+}
+
+.codo-multi-columns {
+    width: 100%;
+    overflow: hidden;
+}
+
+.codo-column {
+    width: 33.3%;
+    display: block;
+    float: left;
+	padding: 1%;
+}
+
+
+@media(max-width: 992px){
+	.codo-column {
+		width: 50%;
+	}	
+}
+
+@media(max-width: 767px){
+	.codo-column {
+		width: 100%;
+	}	
+}
