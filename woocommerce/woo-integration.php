@@ -392,49 +392,40 @@ add_action( 'woocommerce_admin_order_data_after_order_details', 'wpwa_editable_o
 /**
  * Admin order field display
  */
-function wpwa_editable_order_custom_field($order) {
-    // Ensure we have a valid order object
-    if (!is_a($order, 'WC_Order')) {
-        $order = wc_get_order($order);
-    }
-    if (!$order) {
-        return;
-    }
-    // Loop through order items
-    $item_value_site_id = '';
-    $item_value_user_id = '';
-    $item_id = '';
-    foreach ($order->get_items() as $item_id => $item) {
-        if ($item->get_meta('site_id')) {
-            $item_value_site_id = $item->get_meta('site_id');
-        }
-        if ($item->get_meta('user_id')) {
-            $item_value_user_id = $item->get_meta('user_id');
-        } 
-        // Store first item_id for reference
-        if (!$item_id) {
-            echo '<input type="hidden" name="item_id_ref" value="' . esc_attr($item_id) . '">';
+function wpwa_editable_order_custom_field( $order ){
+    // Get meta data (not item meta data)
+    $order_site_id = $order->get_meta('site_id');
+    $order_user_id = $order->get_meta('user_id');
+    
+    // If order meta doesn't exist, try to get from first item
+    if ( empty($order_site_id) || empty($order_user_id) ) {
+        foreach( $order->get_items() as $item_id => $item ){
+            if ( empty($order_site_id) && $item->get_meta('site_id') ) {
+                $order_site_id = $item->get_meta('site_id');
+            }
+            if ( empty($order_user_id) && $item->get_meta('user_id') ) {
+                $order_user_id = $item->get_meta('user_id');
+            }
+            if ( $order_site_id && $order_user_id ) {
+                break; // Found both, no need to continue
+            }
         }
     }
-    // Get meta data from order (HPOS compatible)
-    $updated_value_site_id = $order->get_meta('site_id');
-    $updated_value_user_id = $order->get_meta('user_id');   
-    // Use order meta if available, otherwise item meta
-    $value_site_id = $updated_value_site_id ? $updated_value_site_id : $item_value_site_id;
-    $value_user_id = $updated_value_user_id ? $updated_value_user_id : $item_value_user_id;
+
     // Display the custom editable fields
-    woocommerce_wp_text_input([
-        'id'            => 'site_id',
+    woocommerce_wp_text_input( array(
+        'id'            => 'wpwa_site_id',
         'label'         => __("Site ID:", "wpwa"),
-        'value'         => $value_site_id,
+        'value'         => $order_site_id,
         'wrapper_class' => 'form-field-wide',
-    ]);
-    woocommerce_wp_text_input([
-        'id'            => 'user_id',
+    ) );
+    
+    woocommerce_wp_text_input( array(
+        'id'            => 'wpwa_user_id',
         'label'         => __("User ID:", "wpwa"),
-        'value'         => $value_user_id,
+        'value'         => $order_user_id,
         'wrapper_class' => 'form-field-wide',
-    ]);
+    ) );
 }
 
 // Save the custom editable field value as order meta data and update order item //meta data
@@ -442,32 +433,42 @@ add_action( 'woocommerce_process_shop_order_meta', 'wpwa_save_order_custom_field
 /**
  * Order meta save handler
  */
-function wpwa_save_order_custom_field_meta_data($post_id, $post) {
-    // Check if it's an order (HPOS compatible check)
-    $order = wc_get_order($post_id);
-    if (!$order) {
+function wpwa_save_order_custom_field_meta_data( $post_id, $post ){
+    // Get the order object
+    $order = wc_get_order( $post_id );
+    if ( ! $order ) {
         return;
     }
-    // Save site_id
-    if (isset($_POST['site_id'])) {
-        $site_id = sanitize_text_field($_POST['site_id']);
-        $order->update_meta_data('site_id', $site_id);   
-        // Also update item meta
-        if (isset($_POST['item_id_ref'])) {
-            wc_update_order_item_meta($_POST['item_id_ref'], 'site_id', $site_id);
-        }
+    // Track if we made any changes
+    $updated = false;
+    // Save Site ID
+    if( isset( $_POST['wpwa_site_id'] ) ){
+        $new_site_id = sanitize_text_field( $_POST['wpwa_site_id'] );
+        // Update order meta
+        $order->update_meta_data( 'site_id', $new_site_id );
+        // Update ALL item metas
+        foreach( $order->get_items() as $item_id => $item ) {
+            $item->update_meta_data( 'site_id', $new_site_id );
+            $item->save();
+        }   
+        $updated = true;
     }
-    // Save user_id
-    if (isset($_POST['user_id'])) {
-        $user_id = sanitize_text_field($_POST['user_id']);
-        $order->update_meta_data('user_id', $user_id);   
-        // Also update item meta
-        if (isset($_POST['item_id_ref'])) {
-            wc_update_order_item_meta($_POST['item_id_ref'], 'user_id', $user_id);
-        }
+    // Save User ID
+    if( isset( $_POST['wpwa_user_id'] ) ){
+        $new_user_id = sanitize_text_field( $_POST['wpwa_user_id'] );
+        // Update order meta
+        $order->update_meta_data( 'user_id', $new_user_id );
+        // Update ALL item metas
+        foreach( $order->get_items() as $item_id => $item ) {
+            $item->update_meta_data( 'user_id', $new_user_id );
+            $item->save();
+        }   
+        $updated = true;
     }   
-    // Save the order (HPOS compatible)
-    $order->save();
+    // Save the order if we made changes
+    if ( $updated ) {
+        $order->save();
+    }
 }
 
 add_action( 'woocommerce_payment_complete_order_status', 'woowa_wc_auto_complete_paid_order', 10, 3 );
