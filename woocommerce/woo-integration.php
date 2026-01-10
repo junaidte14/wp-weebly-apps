@@ -301,106 +301,105 @@ add_filter( 'woocommerce_get_item_data', 'woowa_get_item_data', 10, 2 );
  * Add custom meta to order
  */
 function woowa_checkout_create_order_line_item( $item, $cart_item_key, $values, $order ) {
+     
      if( isset( $values['site_id'] ) ) {
-         $item->add_meta_data(
-         __( 'site_id', 'woowa' ),
-         $values['site_id'],
-         true
-         );
+         $item->add_meta_data( 'site_id', $values['site_id'], true );
      }
      if( isset( $values['user_id'] ) ) {
-         $item->add_meta_data(
-         __( 'user_id', 'woowa' ),
-         $values['user_id'],
-         true
-         );
+         $item->add_meta_data( 'user_id', $values['user_id'], true );
      }
      if( isset( $values['access_token'] ) ) {
-         $item->add_meta_data(
-         __( 'access_token', 'woowa' ),
-         $values['access_token'],
-         true
-         );
+         $item->add_meta_data( 'access_token', $values['access_token'], true );
      }
      if( isset( $values['final_url'] ) ) {
-         $item->add_meta_data(
-         __( 'final_url', 'woowa' ),
-         $values['final_url'],
-         true
-         );
+         $item->add_meta_data( 'final_url', $values['final_url'], true );
      }
 }
+
 add_action( 'woocommerce_checkout_create_order_line_item', 'woowa_checkout_create_order_line_item', 10, 4 );
 
-/**
- * Check if a *valid* completed order already exists for this
- * product + site + customer combination.
- *
- * Returns the order-ID if a *still-active* order-item is found,
- * otherwise returns false (so the user must pay again).
- */
-function woowa_check_if_order_exists( $product_id, $r_site_id, $r_user_id, $order_status = [ 'wc-completed' ] ) {
-	global $wpdb;
-	// 1. Get all completed orders that match  site_id  first (fast SQL filter)
-	$results = $wpdb->get_col("
-		SELECT order_items.order_id
-		FROM {$wpdb->prefix}woocommerce_order_items         AS order_items
-		LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta AS order_meta
-		         ON order_items.order_item_id = order_meta.order_item_id
-		LEFT JOIN {$wpdb->posts} AS posts
-		         ON order_items.order_id = posts.ID
-		WHERE posts.post_type   = 'shop_order'
-		  AND posts.post_status IN ( '" . implode( "','", $order_status ) . "' )
-		  AND order_items.order_item_type = 'line_item'
-		  AND order_meta.meta_key   = 'site_id'
-		  AND order_meta.meta_value = %s
-	", $r_site_id );
-	/* -----------------------------------------------------------------
-	 * 2. Loop through each candidate order-item and verify:
-	 *    • same product
-	 *    • same Weebly user_id
-	 *    • recurring item still active  (not expired / not revoked)
-	 * ----------------------------------------------------------------*/
-	foreach ( $results as $order_id ) {
+function woowa_check_if_order_exists( $product_id, $r_site_id, $r_user_id, $order_status = [ 'wc-completed', 'wc-processing' ] ) {
+    global $wpdb;
 
-		$order = wc_get_order( $order_id );
-		if ( ! $order ) {
-			continue;
-		}
+    // 1. Sanitize Status
+    $status_placeholders = implode( "','", array_map( 'esc_sql', $order_status ) );
 
-		foreach ( $order->get_items() as $item_id => $item ) {
+    // 2. Prepare SQL
+    // OPTIMIZATION: We removed the check for 'meta_key = site_id'. 
+    // Why? Because if the key was saved wrongly as "Site ID", we still want to find this value.
+    // We strictly match the meta_value (the ID itself) which is unique enough.
+    $sql = $wpdb->prepare( "
+        SELECT DISTINCT order_items.order_id
+        FROM {$wpdb->prefix}woocommerce_order_items AS order_items
+        LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta AS order_meta
+            ON order_items.order_item_id = order_meta.order_item_id
+        LEFT JOIN {$wpdb->posts} AS posts
+            ON order_items.order_id = posts.ID
+        WHERE posts.post_type = 'shop_order'
+          AND posts.post_status IN ( '$status_placeholders' )
+          AND order_items.order_item_type = 'line_item'
+          AND order_meta.meta_value = %s 
+    ", $r_site_id );
 
-			$site_id = wc_get_order_item_meta( $item_id, 'site_id', true );
-			$user_id = wc_get_order_item_meta( $item_id, 'user_id', true );
-			$pr_id   = wc_get_order_item_meta( $item_id, '_product_id', true );
+    $results = $wpdb->get_col( $sql );
 
-			if ( (int) $pr_id   !== (int) $product_id ||
-			     (string) $site_id !== (string) $r_site_id ||
-			     (string) $user_id !== (string) $r_user_id ) {
-				continue; // not the same app / customer
-			}
+    if ( empty( $results ) ) {
+        error_log("🐞 No orders found via SQL for site_id: " . $r_site_id);
+        return false;
+    }
 
-			/* ---- Is this product flagged as recurring? ---- */
-			$is_recurring = get_post_meta( $product_id, '_wpwa_is_recurring', true );
+    // 3. Loop and Validate
+    foreach ( $results as $order_id ) {
+        $order = wc_get_order( $order_id );
+        if ( ! $order ) continue;
 
-			if ( 'yes' === $is_recurring ) {
+        foreach ( $order->get_items() as $item ) {
+            // Retrieve meta safely. 
+            // Note: If you saved it as 'Site ID' previously, $item->get_meta('site_id') might fail.
+            // We iterate manually if get_meta fails, or rely on the SQL match we just found.
+            
+            $site_id = $item->get_meta( 'site_id' ); 
+            
+            // FALLBACK: If standard get_meta fails (due to translation bug), try getting all meta
+            if ( empty( $site_id ) ) {
+                $all_meta = $item->get_meta_data();
+                foreach($all_meta as $meta) {
+                    if ( $meta->value == $r_site_id ) {
+                        $site_id = $meta->value; // Found it under a different key name
+                        break;
+                    }
+                }
+            }
 
-				$expiry  = (int) wc_get_order_item_meta( $item_id, '_wpwa_expiry', true );
-				$revoked = wc_get_order_item_meta( $item_id, '_wpwa_token_revoked', true );
+            $user_id = $item->get_meta( 'user_id' );
+            $pr_id   = $item->get_product_id();
 
-				// Already expired or manually revoked → treat as *no* valid order
-				if ( $revoked === 'yes' || ( $expiry && time() > $expiry ) ) {
-					continue;
-				}
-			}
+            // Compare Product ID and Site ID
+            if ( (int) $pr_id !== (int) $product_id ) continue;
+            if ( (string) $site_id !== (string) $r_site_id ) continue;
+            
+            // Optional: User ID check (Only if User ID is strictly required to match)
+            if ( !empty($r_user_id) && !empty($user_id) && (string)$user_id !== (string)$r_user_id ) {
+                 continue;
+            }
 
-			/* —— If we reach here, we found a VALID existing order —— */
-			return $order_id;
-		}
-	}
+            // Recurring Logic
+            $is_recurring = get_post_meta( $product_id, '_wpwa_is_recurring', true );
+            if ( 'yes' === $is_recurring ) {
+                $expiry  = (int) $item->get_meta( '_wpwa_expiry' );
+                $revoked = $item->get_meta( '_wpwa_token_revoked' );
+                if ( 'yes' === $revoked || ( $expiry > 0 && time() > $expiry ) ) {
+                    continue; 
+                }
+            }
 
-	return false;
+            return $order_id; // Valid order found
+        }
+    }
+
+    return false;
 }
+
 
 // Output a custom editable field in backend edit order pages under general section
 add_action( 'woocommerce_admin_order_data_after_order_details', 'wpwa_editable_order_custom_field', 12, 1 );
@@ -541,54 +540,6 @@ function wpwa_show_final_step_notice_multiple_with_names( $order ) {
 		}
 		echo '</div>';
 	}
-}
-
-// Send "Final Step" email after order is completed
-add_action( 'woocommerce_order_status_completed', 'wpwa_send_final_step_email', 10, 1 );
-function wpwa_send_final_step_email( $order_id ) {
-    $order = wc_get_order( $order_id );
-    if ( ! $order ) {
-        return;
-    }
-
-    $links = [];
-    $shown_client_ids = [];
-
-    foreach ( $order->get_items() as $item ) {
-        $product_id = $item->get_product_id();
-        if ( ! $product_id ) continue;
-
-        $client_id = get_post_meta( $product_id, 'woowa_product_client_id', true );
-        if ( empty( $client_id ) || in_array( $client_id, $shown_client_ids, true ) ) continue;
-
-        $product      = wc_get_product( $product_id );
-        $product_name = $product ? $product->get_name() : 'Weebly App Product';
-        $final_url    = esc_url( "https://www.weebly.com/app-center/oauth/finish?client_id={$client_id}" );
-
-        $links[] = '<p><strong>' . esc_html( $product_name ) . ':</strong> 
-            <a href="' . $final_url . '" 
-            style="background:#0073aa;color:#fff;padding:8px 12px;text-decoration:none;border-radius:4px;" 
-            target="_blank">✅ Finish Connecting</a></p>';
-
-        $shown_client_ids[] = $client_id;
-    }
-
-    if ( empty( $links ) ) {
-        return;
-    }
-
-    $to       = $order->get_billing_email();
-    $subject  = '⚠️ Action Required: Complete Your App Installation';
-    $headers  = [ 'Content-Type: text/html; charset=UTF-8' ];
-
-    $message  = '<p>Hi ' . esc_html( $order->get_billing_first_name() ) . ',</p>';
-    $message .= '<p><strong>One final step is required to activate your app(s).</strong></p>';
-    $message .= '<p>Please click the button(s) below to finish connecting your app(s):</p>';
-    $message .= implode( '', $links );
-    $message .= '<p>⚠️ Without completing this step, your app will not be fully installed.</p>';
-    $message .= '<p>Thank you,<br>The Support Team</p>';
-
-    wp_mail( $to, $subject, $message, $headers );
 }
 
 ?>

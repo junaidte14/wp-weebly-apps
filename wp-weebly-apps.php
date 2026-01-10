@@ -53,6 +53,9 @@ if ( ! defined( 'WPWA_PLUGIN_VERSION' ) )
     define( 'WPWA_PLUGIN_VERSION', '1.0.0' );
 
 /*Plugin Menu Handling*/
+require_once plugin_dir_path( __FILE__ ) . 'admin/admin-ajax-handlers.php';
+require_once plugin_dir_path( __FILE__ ) . 'admin/admin-enqueue.php';
+require_once plugin_dir_path( __FILE__ ) . 'admin/wpwa-analytics.php';
 require_once plugin_dir_path( __FILE__ ) . 'admin/recurring-orders-page.php';
 require_once( plugin_dir_path( __FILE__ ) . 'settings/menu_pages.php');
 add_action('admin_menu', 'wpwa_admin_actions');

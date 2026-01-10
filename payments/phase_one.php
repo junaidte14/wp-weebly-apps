@@ -37,6 +37,7 @@ function _wpwa_meta( int $id, array $keys ) {
 	}
 	return '';
 }
+
 function _wpwa_pr_from_client( int $client_id ): int {
 	$q = new WP_Query( [
 		'post_type'      => 'product',
@@ -49,12 +50,11 @@ function _wpwa_pr_from_client( int $client_id ): int {
 /* ========== PHASE-2 first (authorization_code present) ========== */
 if ( isset( $_GET['authorization_code'], $_GET['pr_id'] ) ) {
 	$pr_id  = absint( $_GET['pr_id'] );
-	wpwa_dbg('🐞 Phase-2: Incoming pr_id', $pr_id);
-
+    error_log("Phase-2: pr_id validation failed, trying fallback {$pr_id}");
 	if ( ! $pr_id || get_post_type( $pr_id ) !== 'product' || get_post_status( $pr_id ) !== 'publish' || ! wc_get_product( $pr_id ) ) {
-		wpwa_dbg('🐞 Phase-2: pr_id validation failed, trying fallback', $pr_id);
+		error_log("Phase-2: pr_id validation failed, trying fallback {$pr_id}");
 		$pr_id = intval(get_post_meta( $pr_id, 'woowa_product_id', true ));
-		wpwa_dbg('🐞 Phase-2: fallback pr_id', $pr_id);
+		error_log("Phase-2: fallback pr_id {$pr_id}");
 	}
 
 	$code   = sanitize_text_field( $_GET['authorization_code'] );
@@ -62,17 +62,18 @@ if ( isset( $_GET['authorization_code'], $_GET['pr_id'] ) ) {
 	$site   = sanitize_text_field( $_GET['site_id'] ?? '' );
 	$cb_url = esc_url_raw( $_GET['callback_url'] ?? '' );
 
-	wpwa_dbg('🐞 Phase-2: Received GET', $_GET);
+	//error_log("🐞 Phase-2: Received GET " . print_r($_GET, true));
 
 	$cid  = _wpwa_meta( $pr_id, [ 'woowa_product_client_id','wpwa_product_client_id','weebly_product_client_id','wapp_product_client_id' ] );
 	$csec = _wpwa_meta( $pr_id, [ 'woowa_product_secret_key','wpwa_product_secret_key','weebly_product_secret_key','wapp_product_secret_key' ] );
-	wpwa_dbg('🐞 Phase-2: Client ID and Secret', [ 'cid' => $cid, 'csec' => $csec ]);
+
+	//error_log("🐞 Phase-2: Client ID and Secret: cid " . print_r($cid, true) . ", csec " . print_r($csec, true));
 
 	if ( ! $cid || ! $csec ) { wp_die( 'Phase-2: missing client creds' ); }
 
 	$wc = new WeeblyClient( $cid, $csec, $user, $site, null );
 	$tok = $wc->getAccessToken( $code, $cb_url );
-	wpwa_dbg('🐞 Phase-2: Access token response', $tok);
+	//error_log("🐞 Phase-2: Access token response " . print_r($tok, true));
 
 	if ( empty( $tok->access_token ) ) {
 		wp_die( 'Phase-2: token exchange failed (' . ( $tok->error ?? 'unknown' ) . ')' );
@@ -81,6 +82,7 @@ if ( isset( $_GET['authorization_code'], $_GET['pr_id'] ) ) {
 	$access = $tok->access_token;
 	$product_id = _wpwa_pr_from_client($cid);
 	$order = woowa_check_if_order_exists( $pr_id, $site, $user );
+	//error_log("🐞 Phase-2: check existing order response " . print_r($order, true));
 	if ( ! ( $order ) ) {
 		woowa_paymentProcessForm( $_GET, $pr_id, $tok->callback_url, $access );
 	} else {
@@ -121,11 +123,13 @@ if ( isset( $_GET['pr_id'] ) ) {
 } else {
 	wp_die( 'Phase-1: missing pr_id / client_id' );
 }
-wpwa_dbg('🐞 Phase-1: Resolved pr_id', $pr_id);
+
+//error_log("🐞 Phase-1: Resolved pr_id " . print_r($pr_id, true));
 
 $cid  = _wpwa_meta( $pr_id, [ 'woowa_product_client_id','wpwa_product_client_id','weebly_product_client_id','wapp_product_client_id' ] );
 $csec = _wpwa_meta( $pr_id, [ 'woowa_product_secret_key','wpwa_product_secret_key','weebly_product_secret_key','wapp_product_secret_key' ] );
-wpwa_dbg('🐞 Phase-1: Client ID and Secret', [ 'cid' => $cid, 'csec' => $csec ]);
+
+//error_log("🐞 Phase-1: Client ID and Secret: cid is " . print_r($cid, true) . ", csec is " . print_r($csec, true));
 
 if ( ! $cid || ! $csec ) { wp_die( 'Phase-1: missing client creds' ); }
 
@@ -133,7 +137,7 @@ $hmac_parts = [ 'user_id' => $_GET['user_id'] ?? '', 'timestamp' => $_GET['times
 if ( isset( $_GET['site_id'] ) ) { $hmac_parts['site_id'] = $_GET['site_id']; }
 
 $is_hmac_valid = HMAC::isHmacValid( http_build_query( $hmac_parts ), $csec, $_GET['hmac'] ?? '' );
-wpwa_dbg('🐞 Phase-1: HMAC Validation', [ 'input' => $hmac_parts, 'valid' => $is_hmac_valid ]);
+//error_log("🐞 Phase-1: HMAC Validation: input is " . print_r($hmac_parts, true) . ", valid is " . print_r($is_hmac_valid, true));
 if ( ! $is_hmac_valid ) {
 	wp_die( 'Phase-1: HMAC invalid' );
 }
@@ -152,6 +156,6 @@ $auth_url = 'https://www.weebly.com/app-center/oauth/authorize?' . http_build_qu
 	'state'        => $state,
 ], '', '&', PHP_QUERY_RFC3986 );
 
-wpwa_dbg('🐞 Phase-1: Redirecting to OAuth URL', $auth_url);
+//("🐞 Phase-1: Redirecting to OAuth URL" . print_r($auth_url, true));
 wp_redirect( $auth_url );
 exit;
