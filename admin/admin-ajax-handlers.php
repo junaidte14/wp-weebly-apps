@@ -32,48 +32,53 @@ function wpwa_handle_order_action_ajax() {
     }
 }
 
+/**
+ * Handle order action AJAX
+ */
 function wpwa_process_order_action($payment_id, $action, $params) {
     $result = ['success' => false, 'message' => ''];
-    
+    // Get order object (HPOS compatible)
+    $order = wc_get_order($payment_id);
+    if (!$order) {
+        return ['success' => false, 'message' => 'Invalid order ID'];
+    }
     switch ($action) {
         case 'notified':
             $result = wpwa_send_payment_notification($payment_id, $params);
             break;
-            
         case 'completed':
         case 'for-testing':
         case 'refunded':
-            update_post_meta($payment_id, 'weebly_notification', sanitize_text_field($action));
+            // Use order meta instead of post meta (HPOS compatible)
+            $order->update_meta_data('weebly_notification', sanitize_text_field($action));
+            $order->save();
             $result = ['success' => true, 'message' => 'Status updated to ' . ucfirst($action)];
             break;
-            
         case 'remove_access':
             $result = wpwa_remove_app_access($payment_id, $params);
-            break;
-            
+            break;       
         case 'delete':
             $result = wpwa_delete_order($payment_id, $params);
             break;
     }
-    
     // Log the action
-    wpwa_log_order_action($payment_id, $action, $result['success']);
-    
+    wpwa_log_order_action($payment_id, $action, $result['success']);   
     return $result;
 }
 
+/**
+ * Send payment notification
+ */
 function wpwa_send_payment_notification($payment_id, $params) {
     $gross_amount = isset($params['gross_amount']) ? floatval($params['gross_amount']) : 0;
     $payable_amount = isset($params['payable_amount']) ? floatval($params['payable_amount']) : 0;
     $access_token = isset($params['access_token']) ? sanitize_text_field($params['access_token']) : '';
     $app_name = isset($params['app_name']) ? sanitize_text_field($params['app_name']) : '';
-    
     if (!$gross_amount || !$payable_amount || !$access_token) {
         return ['success' => false, 'message' => 'Missing required parameters'];
     }
-    
     $curl = curl_init();
-    curl_setopt_array($curl, array(
+    curl_setopt_array($curl, [
         CURLOPT_URL => "https://api.weebly.com/v1/admin/app/payment_notifications",
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_ENCODING => "",
@@ -90,22 +95,24 @@ function wpwa_send_payment_notification($payment_id, $params) {
             'payable_amount' => $payable_amount,
             'currency' => 'USD'
         ]),
-        CURLOPT_HTTPHEADER => array(
+        CURLOPT_HTTPHEADER => [
             "Content-Type: application/json",
             "cache-control: no-cache",
             "x-weebly-access-token: " . $access_token
-        ),
-    ));
-    
+        ],
+    ]);
     $response = curl_exec($curl);
-    $err = curl_error($curl);
     $responseInfo = curl_getinfo($curl);
     $httpResponseCode = $responseInfo['http_code'];
     curl_close($curl);
-    
+    // Get order object (HPOS compatible)
+    $order = wc_get_order($payment_id);   
     if ($httpResponseCode == 200) {
-        update_post_meta($payment_id, 'weebly_notification', 'notified');
-        update_post_meta($payment_id, 'wpwa_order_not_status', 'submitted');
+        if ($order) {
+            $order->update_meta_data('weebly_notification', 'notified');
+            $order->update_meta_data('wpwa_order_not_status', 'submitted');
+            $order->save();
+        }
         return ['success' => true, 'message' => 'Payment notification sent successfully'];
     } elseif ($httpResponseCode == 403) {
         return ['success' => false, 'message' => 'Unknown API key or notification already submitted'];
@@ -158,29 +165,44 @@ function wpwa_remove_app_access($payment_id, $params) {
     }
 }
 
+/**
+ * Delete order handler
+ */
 function wpwa_delete_order($payment_id, $params) {
+    // First remove access
     $result = wpwa_remove_app_access($payment_id, $params);
-    
     if ($result['success'] || strpos($result['message'], 'already disconnected') !== false) {
-        wp_delete_post($payment_id, true);
-        return ['success' => true, 'message' => 'Order deleted successfully'];
-    }
-    
+        $order = wc_get_order($payment_id);
+        if ($order) {
+            // HPOS compatible delete
+            $order->delete(true); // true = force delete
+            return ['success' => true, 'message' => 'Order deleted successfully'];
+        }
+    }   
     return $result;
 }
 
+/**
+ * Order action logging
+ */
 function wpwa_log_order_action($payment_id, $action, $success) {
-    $log_entry = array(
-        'timestamp' => current_time('mysql'),
-        'action' => $action,
-        'success' => $success,
-        'user' => wp_get_current_user()->user_login
-    );
-    
-    $logs = get_post_meta($payment_id, 'wpwa_action_logs', true);
-    if (!is_array($logs)) {
-        $logs = array();
+    $order = wc_get_order($payment_id);
+    if (!$order) {
+        return;
     }
-    $logs[] = $log_entry;
-    update_post_meta($payment_id, 'wpwa_action_logs', $logs);
+    $log_entry = [
+        'timestamp' => current_time('mysql'),
+        'action'    => $action,
+        'success'   => $success,
+        'user'      => wp_get_current_user()->user_login
+    ];
+    // Get existing logs (HPOS compatible)
+    $logs = $order->get_meta('wpwa_action_logs');
+    if (!is_array($logs)) {
+        $logs = [];
+    }
+    $logs[] = $log_entry;   
+    // Update order meta (HPOS compatible)
+    $order->update_meta_data('wpwa_action_logs', $logs);
+    $order->save();
 }

@@ -155,42 +155,48 @@ final class WPWA_Recurring {
 	/* =======================================================================
 	 *  3. Order completion: store/renew licence
 	 * ===================================================================== */
-	public static function handle_order_completed( $order_id ) {
-
-		$order  = wc_get_order( $order_id );
+	/**
+	 * Handle order completed (HPOS compatible)
+	 */
+	public static function handle_order_completed($order_id) {
+		$order = wc_get_order($order_id);
+		
+		if (!$order) {
+			return;
+		}
+		
 		$logger = wc_get_logger();
-
-		foreach ( $order->get_items() as $item ) {
-
+		
+		foreach ($order->get_items() as $item) {
 			$product_id = $item->get_product_id();
-			$product    = wc_get_product( $product_id );
-
-			if ( 'yes' !== $product->get_meta( self::META_KEY_FLAG ) ) {
+			$product = wc_get_product($product_id);
+			
+			if (!$product || 'yes' !== $product->get_meta(self::META_KEY_FLAG)) {
 				continue;
 			}
-
-			$length = max( 1, (int) $product->get_meta( self::META_CYCLE_LENGTH ) );
-			$unit   = $product->get_meta( self::META_CYCLE_UNIT );
-			$unit   = in_array( $unit, [ 'day','week','month','year' ], true ) ? $unit : 'day';
-			$expiry = strtotime( "+{$length} {$unit}" );
-
-			$prev_items = self::locate_customer_items( $order->get_customer_id(), $product_id );
-
-			/* --- encrypt token placeholder (real token handling omitted) --- */
-			$enc_token = self::encrypt_token( md5( uniqid() ) );
-
-			if ( $prev_items ) { // RENEWAL
-				foreach ( $prev_items as $prev ) {
-					$prev->update_meta_data( self::META_KEY_EXPIRE, $expiry );
-					$prev->update_meta_data( '_wpwa_token_revoked', 'no' );
+			
+			$length = max(1, (int) $product->get_meta(self::META_CYCLE_LENGTH));
+			$unit = $product->get_meta(self::META_CYCLE_UNIT);
+			$unit = in_array($unit, ['day','week','month','year'], true) ? $unit : 'day';
+			$expiry = strtotime("+{$length} {$unit}");
+			
+			$prev_items = self::locate_customer_items($order->get_customer_id(), $product_id);
+			
+			// Encrypt token placeholder
+			$enc_token = self::encrypt_token(md5(uniqid()));
+			
+			if ($prev_items) { // RENEWAL
+				foreach ($prev_items as $prev) {
+					$prev->update_meta_data(self::META_KEY_EXPIRE, $expiry);
+					$prev->update_meta_data('_wpwa_token_revoked', 'no');
 					$prev->save();
 				}
-				$logger->info( "Renewed licence for product {$product_id} (order {$order_id})", 'wpwa' );
-			} else {            // FIRST PURCHASE
-				$item->add_meta_data( self::META_KEY_EXPIRE, $expiry );
-				$item->add_meta_data( self::META_KEY_TOKEN,  $enc_token );
+				$logger->info("Renewed licence for product {$product_id} (order {$order_id})", ['source' => 'wpwa']);
+			} else { // FIRST PURCHASE
+				$item->add_meta_data(self::META_KEY_EXPIRE, $expiry);
+				$item->add_meta_data(self::META_KEY_TOKEN, $enc_token);
 				$item->save();
-				$logger->info( "Created licence for product {$product_id} (order {$order_id})", 'wpwa' );
+				$logger->info("Created licence for product {$product_id} (order {$order_id})", ['source' => 'wpwa']);
 			}
 		}
 	}
@@ -198,29 +204,37 @@ final class WPWA_Recurring {
 	/* =======================================================================
 	 *  4. Scheduled scan: revoke tokens past expiry
 	 * ===================================================================== */
+	/**
+	 * Scan for expired tokens (HPOS compatible)
+	 */
 	public static function maybe_revoke_expired_tokens() {
-
 		$logger = wc_get_logger();
-		$now    = time();
-
-		$order_ids = wc_get_orders( [
-			'status'        => [ 'completed','processing','on-hold' ],
-			'type'          => 'shop_order',
-			'return'        => 'ids',
-			'limit'         => -1,
-			'meta_key'      => '_wpwa_expiry',
-			'meta_compare'  => '<',
-			'meta_value'    => $now,
-		] );
-
-		foreach ( $order_ids as $oid ) {
-			$order = wc_get_order( $oid );
-			foreach ( $order->get_items() as $item ) {
-				$expiry = (int) $item->get_meta( self::META_KEY_EXPIRE );
-				if ( $expiry && $expiry < $now && 'yes' !== $item->get_meta( '_wpwa_token_revoked' ) ) {
-					$item->update_meta_data( '_wpwa_token_revoked', 'yes' );
+		$now = time();
+		
+		// Use WC_Order_Query for HPOS compatibility
+		$args = [
+			'status' => ['completed', 'processing', 'on-hold'],
+			'type' => 'shop_order',
+			'limit' => -1,
+			'return' => 'ids'
+		];
+		
+		$order_ids = wc_get_orders($args);
+		
+		foreach ($order_ids as $oid) {
+			$order = wc_get_order($oid);
+			
+			if (!$order) {
+				continue;
+			}
+			
+			foreach ($order->get_items() as $item) {
+				$expiry = (int) $item->get_meta(self::META_KEY_EXPIRE);
+				
+				if ($expiry && $expiry < $now && 'yes' !== $item->get_meta('_wpwa_token_revoked')) {
+					$item->update_meta_data('_wpwa_token_revoked', 'yes');
 					$item->save();
-					$logger->info( "Revoked token for order {$oid} / item {$item->get_id()}", 'wpwa' );
+					$logger->info("Revoked token for order {$oid} / item {$item->get_id()}", ['source' => 'wpwa']);
 				}
 			}
 		}
@@ -248,30 +262,37 @@ final class WPWA_Recurring {
 		}
 	}
 
-	public static function maybe_block_repurchase( $purchasable, $product ) {
-
-		if ( 'yes' !== $product->get_meta( self::META_KEY_FLAG ) || ! is_user_logged_in() ) {
+	/**
+	 * Block repurchase check (HPOS compatible)
+	 */
+	public static function maybe_block_repurchase($purchasable, $product) {
+		if ('yes' !== $product->get_meta(self::META_KEY_FLAG) || !is_user_logged_in()) {
 			return $purchasable;
 		}
-		foreach ( self::locate_customer_items( get_current_user_id(), $product->get_id() ) as $item ) {
-			if ( (int) $item->get_meta( self::META_KEY_EXPIRE ) > time() ) {
+		foreach (self::locate_customer_items(get_current_user_id(), $product->get_id()) as $item) {
+			if ((int) $item->get_meta(self::META_KEY_EXPIRE) > time()) {
 				return false; // active licence exists
 			}
-		}
+		}	
 		return $purchasable;
 	}
 
+	/**
+	 * UPDATED: Show active notice (HPOS compatible)
+	 */
 	public static function maybe_show_active_notice() {
 		global $product;
-		if ( 'yes' !== $product->get_meta( self::META_KEY_FLAG ) || ! is_user_logged_in() ) {
+		if ('yes' !== $product->get_meta(self::META_KEY_FLAG) || !is_user_logged_in()) {
 			return;
-		}
-		foreach ( self::locate_customer_items( get_current_user_id(), $product->get_id() ) as $item ) {
-			$exp = (int) $item->get_meta( self::META_KEY_EXPIRE );
-			if ( $exp > time() ) {
+		}	
+		foreach (self::locate_customer_items(get_current_user_id(), $product->get_id()) as $item) {
+			$exp = (int) $item->get_meta(self::META_KEY_EXPIRE);
+			if ($exp > time()) {
 				wc_print_notice(
-					sprintf( __( 'You already own this licence. Access valid until %s.', 'wpwa' ),
-						date_i18n( get_option( 'date_format' ), $exp ) ),
+					sprintf(
+						__('You already own this licence. Access valid until %s.', 'wpwa'),
+						date_i18n(get_option('date_format'), $exp)
+					),
 					'notice'
 				);
 				break;
@@ -282,24 +303,38 @@ final class WPWA_Recurring {
 	/* =======================================================================
 	 *  6. Utility helpers
 	 * ===================================================================== */
-	private static function locate_customer_items( $customer_id, $product_id ): array {
-
-		$orders = wc_get_orders( [
-			'customer_id'   => $customer_id,
-			'status'        => [ 'completed','processing','on-hold' ],
-			'type'          => 'shop_order',
-			'limit'         => -1,
-			'return'        => 'objects',
-		] );
-
+	/**
+	 * Locate customer items (HPOS compatible)
+	 */
+	private static function locate_customer_items($customer_id, $product_id): array {
+		$args = [
+			'customer_id' => $customer_id,
+			'status' => ['completed', 'processing', 'on-hold'],
+			'type' => 'shop_order',
+			'limit' => -1,
+			'return' => 'objects'
+		];
+		
+		$orders = wc_get_orders($args);
+		
 		$found = [];
-		foreach ( $orders as $o ) {
-			foreach ( $o->get_items() as $item ) {
-				if ( (int) $item->get_product_id() === (int) $product_id ) {
+		foreach ($orders as $o) {
+			// Ensure we have a valid order object
+			if (!is_a($o, 'WC_Order')) {
+				$o = wc_get_order($o);
+			}
+			
+			if (!$o) {
+				continue;
+			}
+			
+			foreach ($o->get_items() as $item) {
+				if ((int) $item->get_product_id() === (int) $product_id) {
 					$found[] = $item;
 				}
 			}
 		}
+		
 		return $found;
 	}
 

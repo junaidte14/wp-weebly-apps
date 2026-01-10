@@ -1,7 +1,7 @@
 <?php
 /**
- * Enhanced Weebly Orders Management Page
- * Improved security, UX, UI, and features
+ * HPOS-Compatible Order Management Page Updates
+ * Replace the query section in admin/manage_orders_page.php
  */
 
 // Security: Check user capabilities
@@ -16,27 +16,38 @@ $search = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
 $status_filter = isset($_GET['status_filter']) ? sanitize_text_field($_GET['status_filter']) : '';
 $view = isset($_GET['sub_page']) && $_GET['sub_page'] == 'action_needed' ? 'action_needed' : 'all';
 
-// Build query args
-$query_args = array(
-    'limit' => $per_page,
-    'type' => 'shop_order',
-    'orderby' => 'date',
-    'order' => 'DESC',
-    'status' => 'wc-completed',
+// Build query args (HPOS compatible)
+$query_args = [
+    'limit'    => $per_page,
+    'type'     => 'shop_order',
+    'orderby'  => 'date',
+    'order'    => 'DESC',
+    'status'   => 'wc-completed',
     'paginate' => true,
-    'page' => $paged,
-);
+    'page'     => $paged,
+    'return'   => 'objects' // Ensure we get order objects
+];
 
+// Add search if provided
 if ($search) {
-    $query_args['s'] = $search;
+    // Search in billing email or order ID
+    $query_args['billing_email'] = $search;
 }
 
 $query = new WC_Order_Query($query_args);
 $results = $query->get_orders();
-$orders = $results->orders;
-$total_orders = $results->total;
-$max_pages = $results->max_num_pages;
 
+// Handle the paginated results
+if (is_object($results) && property_exists($results, 'orders')) {
+    $orders = $results->orders;
+    $total_orders = $results->total;
+    $max_pages = $results->max_num_pages;
+} else {
+    // Fallback if pagination isn't working as expected
+    $orders = is_array($results) ? $results : [];
+    $total_orders = count($orders);
+    $max_pages = 1;
+}
 ?>
 
 <div class="wrap wpwa-orders-wrap">
@@ -111,6 +122,15 @@ $max_pages = $results->max_num_pages;
                 </tr>
             <?php else : ?>
                 <?php foreach ($orders as $order) : 
+                    // Ensure we have a valid order object
+                    if (!is_a($order, 'WC_Order')) {
+                        $order = wc_get_order($order);
+                    }
+                    
+                    if (!$order) {
+                        continue;
+                    }
+                    
                     $order_id = $order->get_id();
                     $items = $order->get_items();
                     $product_name = '';
@@ -132,6 +152,7 @@ $max_pages = $results->max_num_pages;
                     $net_amount = $gross_amount - $fee;
                     $weebly_amount = (30/100) * $net_amount;
                     
+                    // Get status from order meta (HPOS compatible)
                     $status = $order->get_meta('weebly_notification');
                     
                     // Skip if action_needed view and status is completed or for-testing
@@ -152,7 +173,7 @@ $max_pages = $results->max_num_pages;
                         <strong>#<?php echo $order_id; ?></strong>
                         <div class="row-actions">
                             <span class="view">
-                                <a href="<?php echo get_edit_post_link($order_id); ?>" target="_blank">View in WooCommerce</a>
+                                <a href="<?php echo esc_url(admin_url('post.php?post=' . $order_id . '&action=edit')); ?>" target="_blank">View in WooCommerce</a>
                             </span>
                         </div>
                     </td>
@@ -219,21 +240,21 @@ $max_pages = $results->max_num_pages;
                                     </a>
                                     <?php if ($access_token && $site_id && $product_id) : ?>
                                         <a href="#" class="wpwa-action-btn wpwa-danger" 
-                                           data-action="remove_access" 
-                                           data-order-id="<?php echo esc_attr($order_id); ?>"
-                                           data-site-id="<?php echo esc_attr($site_id); ?>"
-                                           data-user-id="<?php echo esc_attr($user_id); ?>"
-                                           data-app-id="<?php echo esc_attr($product_id); ?>"
-                                           data-token="<?php echo esc_attr($access_token); ?>">
+                                        data-action="remove_access" 
+                                        data-order-id="<?php echo esc_attr($order_id); ?>"
+                                        data-site-id="<?php echo esc_attr($site_id); ?>"
+                                        data-user-id="<?php echo esc_attr($user_id); ?>"
+                                        data-app-id="<?php echo esc_attr($product_id); ?>"
+                                        data-token="<?php echo esc_attr($access_token); ?>">
                                             <span class="dashicons dashicons-lock"></span> Remove Access
                                         </a>
                                         <a href="#" class="wpwa-action-btn wpwa-danger" 
-                                           data-action="delete" 
-                                           data-order-id="<?php echo esc_attr($order_id); ?>"
-                                           data-site-id="<?php echo esc_attr($site_id); ?>"
-                                           data-user-id="<?php echo esc_attr($user_id); ?>"
-                                           data-app-id="<?php echo esc_attr($product_id); ?>"
-                                           data-token="<?php echo esc_attr($access_token); ?>">
+                                        data-action="delete" 
+                                        data-order-id="<?php echo esc_attr($order_id); ?>"
+                                        data-site-id="<?php echo esc_attr($site_id); ?>"
+                                        data-user-id="<?php echo esc_attr($user_id); ?>"
+                                        data-app-id="<?php echo esc_attr($product_id); ?>"
+                                        data-token="<?php echo esc_attr($access_token); ?>">
                                             <span class="dashicons dashicons-trash"></span> Delete Order
                                         </a>
                                     <?php endif; ?>

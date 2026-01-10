@@ -318,144 +318,156 @@ function woowa_checkout_create_order_line_item( $item, $cart_item_key, $values, 
 
 add_action( 'woocommerce_checkout_create_order_line_item', 'woowa_checkout_create_order_line_item', 10, 4 );
 
-function woowa_check_if_order_exists( $product_id, $r_site_id, $r_user_id, $order_status = [ 'wc-completed', 'wc-processing' ] ) {
-    global $wpdb;
-
-    // 1. Sanitize Status
-    $status_placeholders = implode( "','", array_map( 'esc_sql', $order_status ) );
-
-    // 2. Prepare SQL
-    // OPTIMIZATION: We removed the check for 'meta_key = site_id'. 
-    // Why? Because if the key was saved wrongly as "Site ID", we still want to find this value.
-    // We strictly match the meta_value (the ID itself) which is unique enough.
-    $sql = $wpdb->prepare( "
-        SELECT DISTINCT order_items.order_id
-        FROM {$wpdb->prefix}woocommerce_order_items AS order_items
-        LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta AS order_meta
-            ON order_items.order_item_id = order_meta.order_item_id
-        LEFT JOIN {$wpdb->posts} AS posts
-            ON order_items.order_id = posts.ID
-        WHERE posts.post_type = 'shop_order'
-          AND posts.post_status IN ( '$status_placeholders' )
-          AND order_items.order_item_type = 'line_item'
-          AND order_meta.meta_value = %s 
-    ", $r_site_id );
-
-    $results = $wpdb->get_col( $sql );
-
-    if ( empty( $results ) ) {
-        error_log("🐞 No orders found via SQL for site_id: " . $r_site_id);
+/**
+ * UPDATED: woowa_check_if_order_exists function
+ * HPOS-compatible order search using WC_Order_Query instead of direct DB queries
+ */
+function woowa_check_if_order_exists($product_id, $r_site_id, $r_user_id, $order_status = ['wc-completed', 'wc-processing']) {   
+    error_log("🔍 Checking for existing order: product_id={$product_id}, site_id={$r_site_id}, user_id={$r_user_id}");
+    // Use WC_Order_Query for HPOS compatibility
+    $args = [
+        'limit'  => -1,
+        'status' => $order_status,
+        'type'   => 'shop_order',
+        'return' => 'ids'
+    ];
+    $order_ids = wc_get_orders($args);
+    if (empty($order_ids)) {
+        error_log("🐞 No orders found with status: " . implode(', ', $order_status));
         return false;
     }
-
-    // 3. Loop and Validate
-    foreach ( $results as $order_id ) {
-        $order = wc_get_order( $order_id );
-        if ( ! $order ) continue;
-
-        foreach ( $order->get_items() as $item ) {
-            // Retrieve meta safely. 
-            // Note: If you saved it as 'Site ID' previously, $item->get_meta('site_id') might fail.
-            // We iterate manually if get_meta fails, or rely on the SQL match we just found.
-            
-            $site_id = $item->get_meta( 'site_id' ); 
-            
-            // FALLBACK: If standard get_meta fails (due to translation bug), try getting all meta
-            if ( empty( $site_id ) ) {
+    // Loop through orders to find matching product + site_id + user_id
+    foreach ($order_ids as $order_id) {
+        $order = wc_get_order($order_id);
+        if (!$order) continue;   
+        foreach ($order->get_items() as $item_id => $item) {
+            $item_product_id = $item->get_product_id();
+            // Check product match
+            if ((int) $item_product_id !== (int) $product_id) {
+                continue;
+            }
+            // Get site_id and user_id from item meta
+            $site_id = $item->get_meta('site_id');
+            $user_id = $item->get_meta('user_id');
+            // Fallback: Try all meta data if standard get_meta fails
+            if (empty($site_id)) {
                 $all_meta = $item->get_meta_data();
-                foreach($all_meta as $meta) {
-                    if ( $meta->value == $r_site_id ) {
-                        $site_id = $meta->value; // Found it under a different key name
+                foreach ($all_meta as $meta) {
+                    // Check if this meta value matches our site_id
+                    if ((string) $meta->value === (string) $r_site_id) {
+                        $site_id = $meta->value;
                         break;
                     }
                 }
             }
-
-            $user_id = $item->get_meta( 'user_id' );
-            $pr_id   = $item->get_product_id();
-
-            // Compare Product ID and Site ID
-            if ( (int) $pr_id !== (int) $product_id ) continue;
-            if ( (string) $site_id !== (string) $r_site_id ) continue;
-            
-            // Optional: User ID check (Only if User ID is strictly required to match)
-            if ( !empty($r_user_id) && !empty($user_id) && (string)$user_id !== (string)$r_user_id ) {
-                 continue;
+            // Compare site_id
+            if ((string) $site_id !== (string) $r_site_id) {
+                continue;
             }
-
-            // Recurring Logic
-            $is_recurring = get_post_meta( $product_id, '_wpwa_is_recurring', true );
-            if ( 'yes' === $is_recurring ) {
-                $expiry  = (int) $item->get_meta( '_wpwa_expiry' );
-                $revoked = $item->get_meta( '_wpwa_token_revoked' );
-                if ( 'yes' === $revoked || ( $expiry > 0 && time() > $expiry ) ) {
-                    continue; 
+            // Optional: User ID check
+            if (!empty($r_user_id) && !empty($user_id) && (string) $user_id !== (string) $r_user_id) {
+                continue;
+            }
+            // Check if this is a recurring product
+            $is_recurring = get_post_meta($product_id, '_wpwa_is_recurring', true);
+            if ('yes' === $is_recurring) {
+                $expiry = (int) $item->get_meta('_wpwa_expiry');
+                $revoked = $item->get_meta('_wpwa_token_revoked');   
+                // Skip if revoked or expired
+                if ('yes' === $revoked || ($expiry > 0 && time() > $expiry)) {
+                    error_log("⚠️ Order {$order_id} found but licence expired/revoked");
+                    continue;
                 }
             }
-
-            return $order_id; // Valid order found
+            error_log("✅ Valid order found: {$order_id}");
+            return $order_id;
         }
     }
-
+    error_log("❌ No valid order found");
     return false;
 }
 
-
 // Output a custom editable field in backend edit order pages under general section
 add_action( 'woocommerce_admin_order_data_after_order_details', 'wpwa_editable_order_custom_field', 12, 1 );
-function wpwa_editable_order_custom_field( $order ){
-    // Loop through order items
-    foreach( $order->get_items() as $item_id => $item ){
-        if( $item->get_meta('site_id') ){
-            $item_value_site_id = $item->get_meta('site_id');  
-        }
-        if( $item->get_meta('user_id') ){
-            $item_value_user_id = $item->get_meta('user_id');
-        }
-        
-        echo '<input type="hidden" name="item_id_ref" value="' . $item_id . '">';
+/**
+ * Admin order field display
+ */
+function wpwa_editable_order_custom_field($order) {
+    // Ensure we have a valid order object
+    if (!is_a($order, 'WC_Order')) {
+        $order = wc_get_order($order);
     }
-
-    // Get meta data (not item meta data)
+    if (!$order) {
+        return;
+    }
+    // Loop through order items
+    $item_value_site_id = '';
+    $item_value_user_id = '';
+    $item_id = '';
+    foreach ($order->get_items() as $item_id => $item) {
+        if ($item->get_meta('site_id')) {
+            $item_value_site_id = $item->get_meta('site_id');
+        }
+        if ($item->get_meta('user_id')) {
+            $item_value_user_id = $item->get_meta('user_id');
+        } 
+        // Store first item_id for reference
+        if (!$item_id) {
+            echo '<input type="hidden" name="item_id_ref" value="' . esc_attr($item_id) . '">';
+        }
+    }
+    // Get meta data from order (HPOS compatible)
     $updated_value_site_id = $order->get_meta('site_id');
-    $updated_value_user_id = $order->get_meta('user_id');
-
-    // Replace "custom meta" value by the meta data if it exist
-    $value_site_id = $updated_value_site_id ? $updated_value_site_id : ( isset($item_value_site_id) ? $item_value_site_id : '');
-    $value_user_id = $updated_value_user_id ? $updated_value_user_id : ( isset($item_value_user_id) ? $item_value_user_id : '');
-
-    // Display the custom editable field
-    woocommerce_wp_text_input( array(
+    $updated_value_user_id = $order->get_meta('user_id');   
+    // Use order meta if available, otherwise item meta
+    $value_site_id = $updated_value_site_id ? $updated_value_site_id : $item_value_site_id;
+    $value_user_id = $updated_value_user_id ? $updated_value_user_id : $item_value_user_id;
+    // Display the custom editable fields
+    woocommerce_wp_text_input([
         'id'            => 'site_id',
         'label'         => __("Site ID:", "wpwa"),
         'value'         => $value_site_id,
         'wrapper_class' => 'form-field-wide',
-    ) );
-    
-    woocommerce_wp_text_input( array(
+    ]);
+    woocommerce_wp_text_input([
         'id'            => 'user_id',
         'label'         => __("User ID:", "wpwa"),
         'value'         => $value_user_id,
         'wrapper_class' => 'form-field-wide',
-    ) );
+    ]);
 }
 
 // Save the custom editable field value as order meta data and update order item //meta data
 add_action( 'woocommerce_process_shop_order_meta', 'wpwa_save_order_custom_field_meta_data', 12, 2 );
-function wpwa_save_order_custom_field_meta_data( $post_id, $post ){
-    if( isset( $_POST[ 'site_id' ] ) ){
-        update_post_meta( $post_id, 'site_id', sanitize_text_field( $_POST[ 'site_id' ] ) );
-        if( isset( $_POST[ 'item_id_ref' ] ) ){
-            wc_update_order_item_meta( $_POST[ 'item_id_ref' ], 'site_id', $_POST[ 'site_id' ] );
+/**
+ * Order meta save handler
+ */
+function wpwa_save_order_custom_field_meta_data($post_id, $post) {
+    // Check if it's an order (HPOS compatible check)
+    $order = wc_get_order($post_id);
+    if (!$order) {
+        return;
+    }
+    // Save site_id
+    if (isset($_POST['site_id'])) {
+        $site_id = sanitize_text_field($_POST['site_id']);
+        $order->update_meta_data('site_id', $site_id);   
+        // Also update item meta
+        if (isset($_POST['item_id_ref'])) {
+            wc_update_order_item_meta($_POST['item_id_ref'], 'site_id', $site_id);
         }
     }
-    
-    if( isset( $_POST[ 'user_id' ] ) ){
-        update_post_meta( $post_id, 'user_id', sanitize_text_field( $_POST[ 'user_id' ] ) );
-        if( isset( $_POST[ 'item_id_ref' ] ) ){
-            wc_update_order_item_meta( $_POST[ 'item_id_ref' ], 'user_id', $_POST[ 'user_id' ] );
+    // Save user_id
+    if (isset($_POST['user_id'])) {
+        $user_id = sanitize_text_field($_POST['user_id']);
+        $order->update_meta_data('user_id', $user_id);   
+        // Also update item meta
+        if (isset($_POST['item_id_ref'])) {
+            wc_update_order_item_meta($_POST['item_id_ref'], 'user_id', $user_id);
         }
-    }
+    }   
+    // Save the order (HPOS compatible)
+    $order->save();
 }
 
 add_action( 'woocommerce_payment_complete_order_status', 'woowa_wc_auto_complete_paid_order', 10, 3 );
@@ -541,5 +553,3 @@ function wpwa_show_final_step_notice_multiple_with_names( $order ) {
 		echo '</div>';
 	}
 }
-
-?>
