@@ -191,9 +191,6 @@ final class WPWA_Whitelist {
 		$notes                  = sanitize_textarea_field( $_POST['notes'] ?? '' );
 		$subscription_order_id  = absint( $_POST['subscription_order_id'] ?? 0 );
 
-		// Enhanced logging
-		error_log( "WPWA Whitelist Save: type={$whitelist_type}, user_id='{$user_id}', site_id='{$site_id}'" );
-
 		// Validate type-specific requirements
 		$validation = self::validate_entry( $whitelist_type, $user_id, $site_id );
 		if ( ! $validation['valid'] ) {
@@ -225,12 +222,10 @@ final class WPWA_Whitelist {
 			// Update
 			$wpdb->update( $table, $data, [ 'id' => $id ] );
 			$entry_id = $id;
-			error_log( "WPWA Whitelist: Updated entry #{$entry_id}" );
 		} else {
 			// Insert
 			$wpdb->insert( $table, $data );
 			$entry_id = $wpdb->insert_id;
-			error_log( "WPWA Whitelist: Created entry #{$entry_id}" );
 		}
 
 		wp_send_json_success( [
@@ -254,8 +249,6 @@ final class WPWA_Whitelist {
 		global $wpdb;
 		$table = $wpdb->prefix . self::TABLE_NAME;
 		$wpdb->delete( $table, [ 'id' => $id ] );
-
-		error_log( "WPWA Whitelist: Deleted entry #{$id}" );
 
 		wp_send_json_success( [ 'message' => __( 'Entry deleted successfully!', 'wpwa' ) ] );
 	}
@@ -290,8 +283,6 @@ final class WPWA_Whitelist {
 		$table = $wpdb->prefix . self::TABLE_NAME;
 		$now   = current_time( 'mysql' );
 
-		error_log( "🔍 WPWA Whitelist Check: user_id='{$user_id}', site_id='{$site_id}'" );
-
 		// Type 2: User-specific (any app for this user_id regardless of site)
 		$user_specific = $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM `{$table}` 
@@ -303,11 +294,9 @@ final class WPWA_Whitelist {
 		) );
 
 		if ( $user_specific > 0 ) {
-			error_log( "✅ WPWA Whitelist: MATCHED on user_id" );
 			return true;
 		}
 
-		error_log( "❌ WPWA Whitelist: NO MATCH found" );
 		return false;
 	}
 

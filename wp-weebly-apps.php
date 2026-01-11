@@ -54,6 +54,7 @@ require_once( plugin_dir_path( __FILE__ ) . 'custom_posts/products/products.php'
 require_once( plugin_dir_path( __FILE__ ) . 'woocommerce/woo-integration.php');
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-recurring.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-auto-add.php'; 
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-emails.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-tracking.php';
 
