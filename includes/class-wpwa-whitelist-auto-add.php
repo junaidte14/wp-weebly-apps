@@ -102,7 +102,7 @@ final class WPWA_Whitelist_Auto_Add {
 
 		// If we have at least user_id, create entry
 		if ( $user_id ) {
-			$whitelist_type = $site_id ? 'site_user' : 'user_id';
+			$whitelist_type = 'user_id';
 			
 			$entry_id = self::create_whitelist_entry( [
 				'whitelist_type'        => $whitelist_type,
@@ -263,7 +263,7 @@ final class WPWA_Whitelist_Auto_Add {
 			<div class="notice notice-warning">
 				<p>
 					<strong><?php _e( 'Action Required:', 'wpwa' ); ?></strong>
-					<?php _e( 'This order contains a Whitelist product. Please add Weebly User ID and Site ID below to activate whitelist access.', 'wpwa' ); ?>
+					<?php _e( 'This order contains a Whitelist product. Please add Weebly User ID below to activate whitelist access.', 'wpwa' ); ?>
 				</p>
 			</div>
 			<?php
@@ -328,9 +328,6 @@ final class WPWA_Whitelist_Auto_Add {
 					<p><strong><?php _e( 'Entry ID:', 'wpwa' ); ?></strong> #<?php echo $entry['id']; ?></p>
 					<p><strong><?php _e( 'Type:', 'wpwa' ); ?></strong> <?php echo esc_html( $entry['whitelist_type'] ); ?></p>
 					<p><strong><?php _e( 'User ID:', 'wpwa' ); ?></strong> <?php echo esc_html( $entry['user_id'] ); ?></p>
-					<?php if ( $entry['site_id'] ) : ?>
-						<p><strong><?php _e( 'Site ID:', 'wpwa' ); ?></strong> <?php echo esc_html( $entry['site_id'] ); ?></p>
-					<?php endif; ?>
 					<p><strong><?php _e( 'Expires:', 'wpwa' ); ?></strong> 
 						<?php echo $entry['expiry_date'] ? date_i18n( get_option( 'date_format' ), strtotime( $entry['expiry_date'] ) ) : __( 'Never', 'wpwa' ); ?>
 					</p>
@@ -356,8 +353,6 @@ final class WPWA_Whitelist_Auto_Add {
 					<label for="wpwa_whitelist_type"><strong><?php _e( 'Type:', 'wpwa' ); ?></strong></label>
 					<select id="wpwa_whitelist_type" style="width: 100%;">
 						<option value="user_id"><?php _e( 'User ID (any site)', 'wpwa' ); ?></option>
-						<option value="site_user"><?php _e( 'Site + User', 'wpwa' ); ?></option>
-						<option value="global_user"><?php _e( 'Global User', 'wpwa' ); ?></option>
 					</select>
 				</p>
 
@@ -365,12 +360,6 @@ final class WPWA_Whitelist_Auto_Add {
 					<label for="wpwa_weebly_user_id"><strong><?php _e( 'Weebly User ID:', 'wpwa' ); ?></strong></label>
 					<input type="text" id="wpwa_weebly_user_id" style="width: 100%;" 
 					       value="<?php echo esc_attr( get_post_meta( $post->ID, 'weebly_user_id', true ) ); ?>">
-				</p>
-
-				<p id="wpwa_site_id_field">
-					<label for="wpwa_weebly_site_id"><strong><?php _e( 'Weebly Site ID:', 'wpwa' ); ?></strong></label>
-					<input type="text" id="wpwa_weebly_site_id" style="width: 100%;"
-					       value="<?php echo esc_attr( get_post_meta( $post->ID, 'weebly_site_id', true ) ); ?>">
 				</p>
 
 				<p>
@@ -384,33 +373,14 @@ final class WPWA_Whitelist_Auto_Add {
 
 			<script>
 			jQuery(document).ready(function($) {
-				// Toggle site ID field
-				function toggleSiteField() {
-					const type = $('#wpwa_whitelist_type').val();
-					if (type === 'site_user') {
-						$('#wpwa_site_id_field').show();
-					} else {
-						$('#wpwa_site_id_field').hide();
-					}
-				}
-				
-				$('#wpwa_whitelist_type').on('change', toggleSiteField);
-				toggleSiteField();
-
 				// Complete whitelist entry
 				$('#wpwa_complete_whitelist_btn').on('click', function() {
 					const $btn = $(this);
 					const userId = $('#wpwa_weebly_user_id').val().trim();
-					const siteId = $('#wpwa_weebly_site_id').val().trim();
 					const type = $('#wpwa_whitelist_type').val();
 
 					if (!userId) {
 						alert('<?php _e( 'Please enter Weebly User ID', 'wpwa' ); ?>');
-						return;
-					}
-
-					if (type === 'site_user' && !siteId) {
-						alert('<?php _e( 'Please enter Weebly Site ID for Site+User type', 'wpwa' ); ?>');
 						return;
 					}
 
@@ -421,8 +391,7 @@ final class WPWA_Whitelist_Auto_Add {
 						nonce: $('#wpwa_whitelist_nonce').val(),
 						order_id: <?php echo $post->ID; ?>,
 						whitelist_type: type,
-						user_id: userId,
-						site_id: siteId
+						user_id: userId
 					}, function(response) {
 						if (response.success) {
 							$('#wpwa_whitelist_message').html(
@@ -496,16 +465,11 @@ final class WPWA_Whitelist_Auto_Add {
 			update_post_meta( $order_id, '_wpwa_whitelist_entry_id', $entry_id );
 			update_post_meta( $order_id, '_wpwa_whitelist_pending', 'no' );
 			update_post_meta( $order_id, 'weebly_user_id', $user_id );
-			if ( $site_id ) {
-				update_post_meta( $order_id, 'weebly_site_id', $site_id );
-			}
-
 			$order->add_order_note( sprintf(
 				__( 'Whitelist entry #%d created. Type: %s', 'wpwa' ),
 				$entry_id,
 				$whitelist_type
 			) );
-
 			wp_send_json_success( [
 				'message'  => sprintf( __( 'Whitelist entry #%d created successfully!', 'wpwa' ), $entry_id ),
 				'entry_id' => $entry_id,

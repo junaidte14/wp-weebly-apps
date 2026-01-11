@@ -5,7 +5,7 @@
  * 
  * Sends email notifications for whitelist events:
  * - Whitelist activated
- * - Whitelist expiring soon (7 days before)
+ * - Whitelist expiring soon (3 days before)
  * - Whitelist expired
  */
 
@@ -57,7 +57,7 @@ final class WPWA_Whitelist_Emails {
 
 		register_setting( 'wpwa_whitelist_emails', 'wpwa_email_expiring_days', [
 			'type'    => 'integer',
-			'default' => 7,
+			'default' => 3,
 		] );
 	}
 
@@ -83,9 +83,7 @@ final class WPWA_Whitelist_Emails {
 		$expiry = $data['expiry_date'] ?? null;
 
 		$type_labels = [
-			'global_user' => 'Global Access (any app, any site)',
-			'user_id'     => 'User Access (any app)',
-			'site_user'   => 'Site-Specific Access',
+			'user_id'     => 'User Access (any app)'
 		];
 
 		$subject = sprintf(
@@ -143,7 +141,7 @@ final class WPWA_Whitelist_Emails {
 			return;
 		}
 
-		$days_before = absint( get_option( 'wpwa_email_expiring_days', 7 ) );
+		$days_before = absint( get_option( 'wpwa_email_expiring_days', 3 ) );
 		$warning_date = date( 'Y-m-d H:i:s', strtotime( "+{$days_before} days" ) );
 		$now = current_time( 'mysql' );
 
@@ -302,11 +300,6 @@ final class WPWA_Whitelist_Emails {
 						<?php if ( ! empty( $data['user_id'] ) ) : ?>
 							<p class="info-label">Weebly User ID:</p>
 							<p><?php echo esc_html( $data['user_id'] ); ?></p>
-						<?php endif; ?>
-						
-						<?php if ( ! empty( $data['site_id'] ) ) : ?>
-							<p class="info-label">Weebly Site ID:</p>
-							<p><?php echo esc_html( $data['site_id'] ); ?></p>
 						<?php endif; ?>
 						
 						<p class="info-label">Expires:</p>

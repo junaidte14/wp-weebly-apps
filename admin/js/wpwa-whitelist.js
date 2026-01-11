@@ -97,7 +97,7 @@ jQuery(document).ready(function ($) {
 			id: $('#entry_id').val(),
 			whitelist_type: $('#whitelist_type').val(),
 			user_id: $('#user_id').val().trim(),
-			site_id: $('#site_id').val().trim(),
+			site_id: '',
 			email: $('#email').val().trim(),
 			customer_name: $('#customer_name').val().trim(),
 			notes: $('#notes').val().trim(),
@@ -217,7 +217,6 @@ jQuery(document).ready(function ($) {
 			<tr>
 				<td>${typeBadge}</td>
 				<td>${escapeHtml(entry.user_id || '—')}</td>
-				<td>${escapeHtml(entry.site_id || '—')}</td>
 				<td>
 					${entry.customer_name ? '<strong>' + escapeHtml(entry.customer_name) + '</strong><br>' : ''}
 					${entry.email ? '<small>' + escapeHtml(entry.email) + '</small>' : ''}
