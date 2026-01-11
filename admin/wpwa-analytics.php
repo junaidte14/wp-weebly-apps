@@ -97,42 +97,54 @@ function wpwa_get_date_range($range, $custom_start = '', $custom_end = '') {
     return compact('start', 'end', 'prev_start', 'prev_end');
 }
 
+/**
+ * Get orders by date range (HPOS compatible)
+ */
 function wpwa_get_orders_by_date_range($start, $end) {
-    $query = new WC_Order_Query(array(
-        'limit' => -1,
-        'type' => 'shop_order',
-        'status' => 'wc-completed',
+    $query = new WC_Order_Query([
+        'limit'        => -1,
+        'type'         => 'shop_order',
+        'status'       => 'wc-completed',
         'date_created' => $start . '...' . $end,
-        'orderby' => 'date',
-        'order' => 'DESC'
-    ));
+        'orderby'      => 'date',
+        'order'        => 'DESC',
+        'return'       => 'objects' // Ensure we get order objects
+    ]);   
     return $query->get_orders();
 }
 
+/**
+ * Calculate metrics (HPOS compatible)
+ */
 function wpwa_calculate_metrics($orders) {
-    $metrics = array(
-        'total_revenue' => 0,
-        'total_fees' => 0,
-        'total_weebly_payout' => 0,
-        'net_profit' => 0,
-        'total_orders' => count($orders),
-        'avg_order_value' => 0
-    );
-    
+    $metrics = [
+        'total_revenue'         => 0,
+        'total_fees'            => 0,
+        'total_weebly_payout'   => 0,
+        'net_profit'            => 0,
+        'total_orders'          => count($orders),
+        'avg_order_value'       => 0
+    ];
     foreach ($orders as $order) {
+        // Ensure we have a valid order object
+        if (!is_a($order, 'WC_Order')) {
+            $order = wc_get_order($order);
+        }
+        if (!$order) {
+            continue;
+        }
         $gross = $order->get_total() - $order->get_total_tax();
         $fee = ((2.9/100) * $gross) + 0.52;
         $net = $gross - $fee;
-        $weebly = (30/100) * $net;
-        
+        $weebly = (30/100) * $net;   
         $metrics['total_revenue'] += $gross;
         $metrics['total_fees'] += $fee;
         $metrics['total_weebly_payout'] += $weebly;
         $metrics['net_profit'] += ($gross - $fee - $weebly);
     }
-    
-    $metrics['avg_order_value'] = $metrics['total_orders'] > 0 ? $metrics['total_revenue'] / $metrics['total_orders'] : 0;
-    
+    $metrics['avg_order_value'] = $metrics['total_orders'] > 0 
+        ? $metrics['total_revenue'] / $metrics['total_orders'] 
+        : 0;   
     return $metrics;
 }
 
@@ -141,105 +153,174 @@ function wpwa_calculate_growth($current, $previous) {
     return round((($current - $previous) / $previous) * 100, 2);
 }
 
+/**
+ * Get chart data (HPOS compatible)
+ */
 function wpwa_get_chart_data($orders, $start, $end) {
-    $data = array();
+    $data = [];
     $current = strtotime($start);
     $end_time = strtotime($end);
-    
+    // Initialize all dates
     while ($current <= $end_time) {
         $date = date('Y-m-d', $current);
-        $data[$date] = array('revenue' => 0, 'profit' => 0);
+        $data[$date] = ['revenue' => 0, 'profit' => 0];
         $current = strtotime('+1 day', $current);
     }
-    
+    // Fill with order data
     foreach ($orders as $order) {
+        // Ensure we have a valid order object
+        if (!is_a($order, 'WC_Order')) {
+            $order = wc_get_order($order);
+        }
+        if (!$order) {
+            continue;
+        }
         $date = $order->get_date_created()->format('Y-m-d');
         if (isset($data[$date])) {
             $gross = $order->get_total() - $order->get_total_tax();
             $fee = ((2.9/100) * $gross) + 0.52;
             $net = $gross - $fee;
-            $weebly = (30/100) * $net;
-            
+            $weebly = (30/100) * $net;       
             $data[$date]['revenue'] += $gross;
             $data[$date]['profit'] += ($gross - $fee - $weebly);
         }
-    }
-    
+    }   
     return $data;
 }
 
+/**
+ * Get top products (HPOS compatible)
+ */
 function wpwa_get_top_products($orders, $limit = 5) {
-    $products = array();
-    
+    $products = [];
     foreach ($orders as $order) {
+        // Ensure we have a valid order object
+        if (!is_a($order, 'WC_Order')) {
+            $order = wc_get_order($order);
+        }
+        if (!$order) {
+            continue;
+        }
         $items = $order->get_items();
         foreach ($items as $item) {
             $name = $item->get_name();
             $gross = $order->get_total() - $order->get_total_tax();
-            
             if (!isset($products[$name])) {
-                $products[$name] = array('name' => $name, 'revenue' => 0, 'orders' => 0);
-            }
-            
+                $products[$name] = [
+                    'name'    => $name,
+                    'revenue' => 0,
+                    'orders'  => 0
+                ];
+            }       
             $products[$name]['revenue'] += $gross;
             $products[$name]['orders']++;
         }
     }
-    
-    usort($products, function($a, $b) { return $b['revenue'] - $a['revenue']; });
+    usort($products, function($a, $b) {
+        return $b['revenue'] - $a['revenue'];
+    });   
     return array_slice($products, 0, $limit);
 }
 
+/**
+ * Get top customers (HPOS compatible)
+ */
 function wpwa_get_top_customers($orders, $limit = 5) {
-    $customers = array();
-    
+    $customers = [];
     foreach ($orders as $order) {
+        // Ensure we have a valid order object
+        if (!is_a($order, 'WC_Order')) {
+            $order = wc_get_order($order);
+        }
+        if (!$order) {
+            continue;
+        }
         $email = $order->get_billing_email();
         $gross = $order->get_total() - $order->get_total_tax();
-        
         if (!isset($customers[$email])) {
-            $customers[$email] = array('email' => $email, 'revenue' => 0, 'orders' => 0);
-        }
-        
+            $customers[$email] = [
+                'email'   => $email,
+                'revenue' => 0,
+                'orders'  => 0
+            ];
+        }   
         $customers[$email]['revenue'] += $gross;
         $customers[$email]['orders']++;
     }
-    
-    usort($customers, function($a, $b) { return $b['revenue'] - $a['revenue']; });
+    usort($customers, function($a, $b) {
+        return $b['revenue'] - $a['revenue'];
+    });   
     return array_slice($customers, 0, $limit);
 }
 
+/**
+ * Get status distribution (HPOS compatible)
+ */
 function wpwa_get_status_distribution($orders) {
-    $statuses = array('notified' => 0, 'completed' => 0, 'for-testing' => 0, 'refunded' => 0, 'pending' => 0);
-    
+    $statuses = [
+        'notified'    => 0,
+        'completed'   => 0,
+        'for-testing' => 0,
+        'refunded'    => 0,
+        'pending'     => 0
+    ];
     foreach ($orders as $order) {
-        $status = $order->get_meta('weebly_notification') ?: 'pending';
-        if (isset($statuses[$status])) $statuses[$status]++;
-    }
-    
+        // Ensure we have a valid order object
+        if (!is_a($order, 'WC_Order')) {
+            $order = wc_get_order($order);
+        }
+        if (!$order) {
+            continue;
+        }
+        // Get meta using order object (HPOS compatible)
+        $status = $order->get_meta('weebly_notification');
+        if (empty($status)) {
+            $status = 'pending';
+        }   
+        if (isset($statuses[$status])) {
+            $statuses[$status]++;
+        }
+    }   
     return $statuses;
 }
 
+/**
+ * Get recent orders (HPOS compatible)
+ */
 function wpwa_get_recent_orders($limit = 5) {
-    $query = new WC_Order_Query(array('limit' => $limit, 'type' => 'shop_order', 'status' => 'wc-completed', 'orderby' => 'date', 'order' => 'DESC'));
+    $query = new WC_Order_Query([
+        'limit'   => $limit,
+        'type'    => 'shop_order',
+        'status'  => 'wc-completed',
+        'orderby' => 'date',
+        'order'   => 'DESC',
+        'return'  => 'objects'
+    ]);
     $orders = $query->get_orders();
-    $recent = array();
-    
+    $recent = [];
     foreach ($orders as $order) {
+        // Ensure we have a valid order object
+        if (!is_a($order, 'WC_Order')) {
+            $order = wc_get_order($order);
+        }
+        if (!$order) {
+            continue;
+        }
         $items = $order->get_items();
         $product = '';
-        foreach ($items as $item) { $product = $item->get_name(); break; }
-        
-        $recent[] = array(
-            'id' => $order->get_id(),
-            'product' => $product,
+        foreach ($items as $item) {
+            $product = $item->get_name();
+            break;
+        }   
+        $recent[] = [
+            'id'       => $order->get_id(),
+            'product'  => $product,
             'customer' => $order->get_billing_email(),
-            'amount' => $order->get_total() - $order->get_total_tax(),
-            'date' => $order->get_date_created()->format('Y-m-d H:i:s'),
-            'status' => $order->get_meta('weebly_notification')
-        );
-    }
-    
+            'amount'   => $order->get_total() - $order->get_total_tax(),
+            'date'     => $order->get_date_created()->format('Y-m-d H:i:s'),
+            'status'   => $order->get_meta('weebly_notification')
+        ];
+    }   
     return $recent;
 }
 

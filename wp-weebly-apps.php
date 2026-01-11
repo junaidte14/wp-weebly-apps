@@ -1,13 +1,5 @@
 <?php
-
 /**
- * The plugin bootstrap file
- *
- * This file is read by WordPress to generate the plugin information in the plugin
- * admin area. This file also includes all of the dependencies used by the plugin,
- * registers the activation and deactivation functions, and defines a function
- * that starts the plugin.
- *
  * @link              https://codoplex.com
  * @since             1.0.0
  * @package           wpwa
@@ -65,6 +57,10 @@ require_once( plugin_dir_path( __FILE__ ) . 'custom_posts/products/products.php'
 require_once( plugin_dir_path( __FILE__ ) . 'woocommerce/woo-integration.php');
 // recurring functionality
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-recurring.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-auto-add.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-emails.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-tracking.php';
 
 /*Table Removal After Uninstalling the plugin*/
 
@@ -89,12 +85,22 @@ function wpwa_load_textdomain() {
  */
 function activate_wpwa() {
     WPWA_Recurring::activate();
+    WPWA_Whitelist::activate();
+    WPWA_Whitelist_Tracking::activate();
 }
 /**
  * The code that runs during plugin deactivation.
  */
 function deactivate_wpwa() {
     WPWA_Recurring::deactivate();
+    WPWA_Whitelist::deactivate();
 }
 register_activation_hook( __FILE__, 'activate_wpwa' );
 register_deactivation_hook( __FILE__, 'deactivate_wpwa' );
+
+// Declare HPOS compatibility
+add_action('before_woocommerce_init', function() {
+    if (class_exists(\Automattic\WooCommerce\Utilities\FeaturesUtil::class)) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true);
+    }
+});
