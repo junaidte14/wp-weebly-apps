@@ -206,3 +206,37 @@ function wpwa_log_order_action($payment_id, $action, $success) {
     $order->update_meta_data('wpwa_action_logs', $logs);
     $order->save();
 }
+
+add_action('wp_ajax_wpwa_save_whitelist_product', 'wpwa_save_whitelist_product_ajax');
+function wpwa_save_whitelist_product_ajax() {
+    check_ajax_referer('wpwa_whitelist_settings', 'nonce');
+    
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+    
+    $product_id = isset($_POST['product_id']) ? absint($_POST['product_id']) : 0;
+    
+    WPWA_Whitelist::save_whitelist_product_id($product_id);
+    
+    wp_send_json_success(['message' => 'Settings saved successfully!']);
+}
+
+// Add at the end of the file
+
+add_action('wp_ajax_wpwa_save_email_settings', 'wpwa_save_email_settings_ajax');
+
+function wpwa_save_email_settings_ajax() {
+    check_ajax_referer('wpwa_email_settings', 'nonce');
+    
+    if (!current_user_can('manage_woocommerce')) {
+        wp_send_json_error(['message' => 'Insufficient permissions']);
+    }
+    
+    update_option('wpwa_email_activation_enabled', isset($_POST['activation_enabled']) && $_POST['activation_enabled'] == 1);
+    update_option('wpwa_email_expiring_enabled', isset($_POST['expiring_enabled']) && $_POST['expiring_enabled'] == 1);
+    update_option('wpwa_email_expiring_days', absint($_POST['expiring_days'] ?? 7));
+    update_option('wpwa_email_expired_enabled', isset($_POST['expired_enabled']) && $_POST['expired_enabled'] == 1);
+    
+    wp_send_json_success(['message' => 'Settings saved successfully!']);
+}

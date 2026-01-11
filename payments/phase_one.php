@@ -1,9 +1,9 @@
 <?php
 /**
- * Unified Weebly OAuth handler (both phases, auto-detect)
- * Path examples:
- *   /wpwa_phase_one/2042866542
- *   /wpwa_phase_one/?pr_id=1557
+ * Modified phase_one.php with Whitelist Integration & Usage Tracking
+ * File: payments/phase_one.php
+ * 
+ * This replaces the existing phase_one.php file
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -23,7 +23,7 @@ if ( ! function_exists( 'wpwa_dbg' ) ) {
 	}
 }
 
-/* ========== legacy “?…?” fixer ========== */
+/* ========== legacy "?…?" fixer ========== */
 if ( strpos( $_SERVER['QUERY_STRING'], '?' ) !== false && ! isset( $_GET['do_replace'] ) ) {
 	$fixed = str_replace( '?', '&', $_SERVER['QUERY_STRING'] );
 	wp_redirect( strtok( $_SERVER['REQUEST_URI'], '?' ) . '?' . $fixed . '&do_replace=1' );
@@ -50,44 +50,62 @@ function _wpwa_pr_from_client( int $client_id ): int {
 /* ========== PHASE-2 first (authorization_code present) ========== */
 if ( isset( $_GET['authorization_code'], $_GET['pr_id'] ) ) {
 	$pr_id  = absint( $_GET['pr_id'] );
-    error_log("Phase-2: pr_id validation failed, trying fallback {$pr_id}");
-	if ( ! $pr_id || get_post_type( $pr_id ) !== 'product' || get_post_status( $pr_id ) !== 'publish' || ! wc_get_product( $pr_id ) ) {
-		error_log("Phase-2: pr_id validation failed, trying fallback {$pr_id}");
-		$pr_id = intval(get_post_meta( $pr_id, 'woowa_product_id', true ));
-		error_log("Phase-2: fallback pr_id {$pr_id}");
-	}
-
 	$code   = sanitize_text_field( $_GET['authorization_code'] );
 	$user   = sanitize_text_field( $_GET['user_id'] ?? '' );
 	$site   = sanitize_text_field( $_GET['site_id'] ?? '' );
 	$cb_url = esc_url_raw( $_GET['callback_url'] ?? '' );
 
-	//error_log("🐞 Phase-2: Received GET " . print_r($_GET, true));
+	// Validate product
+	if ( ! $pr_id || get_post_type( $pr_id ) !== 'product' || get_post_status( $pr_id ) !== 'publish' || ! wc_get_product( $pr_id ) ) {
+		error_log("Phase-2: pr_id validation failed, trying fallback {$pr_id}");
+		$pr_id = intval( get_post_meta( $pr_id, 'woowa_product_id', true ) );
+		error_log("Phase-2: fallback pr_id {$pr_id}");
+	}
 
 	$cid  = _wpwa_meta( $pr_id, [ 'woowa_product_client_id','wpwa_product_client_id','weebly_product_client_id','wapp_product_client_id' ] );
 	$csec = _wpwa_meta( $pr_id, [ 'woowa_product_secret_key','wpwa_product_secret_key','weebly_product_secret_key','wapp_product_secret_key' ] );
-
-	//error_log("🐞 Phase-2: Client ID and Secret: cid " . print_r($cid, true) . ", csec " . print_r($csec, true));
 
 	if ( ! $cid || ! $csec ) { wp_die( 'Phase-2: missing client creds' ); }
 
 	$wc = new WeeblyClient( $cid, $csec, $user, $site, null );
 	$tok = $wc->getAccessToken( $code, $cb_url );
-	//error_log("🐞 Phase-2: Access token response " . print_r($tok, true));
 
 	if ( empty( $tok->access_token ) ) {
 		wp_die( 'Phase-2: token exchange failed (' . ( $tok->error ?? 'unknown' ) . ')' );
 	}
 
 	$access = $tok->access_token;
-	$product_id = _wpwa_pr_from_client($cid);
+
+	/* ═══════════════════════════════════════════════════════════════
+	 *  WHITELIST CHECK - Skip payment if whitelisted
+	 * ═══════════════════════════════════════════════════════════════ */
+	if ( class_exists( 'WPWA_Whitelist' ) && WPWA_Whitelist::is_whitelisted( $user, $site ) ) {
+		error_log( "WPWA: User {$user} / Site {$site} is WHITELISTED - granting free access" );
+
+		// ✅ LOG USAGE TRACKING
+		if ( class_exists( 'WPWA_Whitelist_Tracking' ) ) {
+			WPWA_Whitelist_Tracking::log_usage( $user, $site, $pr_id, 'install' );
+		}
+
+		// Redirect to Weebly finish URL
+		add_filter( 'allowed_redirect_hosts', function( $hosts ) {
+			$hosts[] = 'www.weebly.com';
+			return $hosts;
+		});
+
+		wp_safe_redirect( $tok->callback_url );
+		exit;
+	}
+
+	/* ─────── Regular flow continues ─────── */
 	$order = woowa_check_if_order_exists( $pr_id, $site, $user );
-	//error_log("🐞 Phase-2: check existing order response " . print_r($order, true));
-	if ( ! ( $order ) ) {
+
+	if ( ! $order ) {
 		woowa_paymentProcessForm( $_GET, $pr_id, $tok->callback_url, $access );
 	} else {
 		$o = wc_get_order( $order );
-		$redirect_url = $tok->callback_url; // fallback
+		$redirect_url = $tok->callback_url;
+		
 		foreach ( $o->get_items() as $iid => $item ) {
 			wc_update_order_item_meta( $iid, 'access_token', $access );
 			$item_user = wc_get_order_item_meta( $iid, 'user_id' );
@@ -100,11 +118,12 @@ if ( isset( $_GET['authorization_code'], $_GET['pr_id'] ) ) {
 				}
 			}
 		}
-		// ✅ Allow external redirect to Weebly
+
 		add_filter( 'allowed_redirect_hosts', function( $hosts ) {
 			$hosts[] = 'www.weebly.com';
 			return $hosts;
 		});
+
 		wp_safe_redirect( $redirect_url );
 		exit;
 	}
@@ -124,12 +143,8 @@ if ( isset( $_GET['pr_id'] ) ) {
 	wp_die( 'Phase-1: missing pr_id / client_id' );
 }
 
-//error_log("🐞 Phase-1: Resolved pr_id " . print_r($pr_id, true));
-
 $cid  = _wpwa_meta( $pr_id, [ 'woowa_product_client_id','wpwa_product_client_id','weebly_product_client_id','wapp_product_client_id' ] );
 $csec = _wpwa_meta( $pr_id, [ 'woowa_product_secret_key','wpwa_product_secret_key','weebly_product_secret_key','wapp_product_secret_key' ] );
-
-//error_log("🐞 Phase-1: Client ID and Secret: cid is " . print_r($cid, true) . ", csec is " . print_r($csec, true));
 
 if ( ! $cid || ! $csec ) { wp_die( 'Phase-1: missing client creds' ); }
 
@@ -137,7 +152,7 @@ $hmac_parts = [ 'user_id' => $_GET['user_id'] ?? '', 'timestamp' => $_GET['times
 if ( isset( $_GET['site_id'] ) ) { $hmac_parts['site_id'] = $_GET['site_id']; }
 
 $is_hmac_valid = HMAC::isHmacValid( http_build_query( $hmac_parts ), $csec, $_GET['hmac'] ?? '' );
-//error_log("🐞 Phase-1: HMAC Validation: input is " . print_r($hmac_parts, true) . ", valid is " . print_r($is_hmac_valid, true));
+
 if ( ! $is_hmac_valid ) {
 	wp_die( 'Phase-1: HMAC invalid' );
 }
@@ -156,6 +171,5 @@ $auth_url = 'https://www.weebly.com/app-center/oauth/authorize?' . http_build_qu
 	'state'        => $state,
 ], '', '&', PHP_QUERY_RFC3986 );
 
-//("🐞 Phase-1: Redirecting to OAuth URL" . print_r($auth_url, true));
 wp_redirect( $auth_url );
 exit;

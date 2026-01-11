@@ -57,7 +57,10 @@ require_once( plugin_dir_path( __FILE__ ) . 'custom_posts/products/products.php'
 require_once( plugin_dir_path( __FILE__ ) . 'woocommerce/woo-integration.php');
 // recurring functionality
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-recurring.php';
-require_once plugin_dir_path( __FILE__ ) . 'includes/hpos-test.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-auto-add.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-emails.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-tracking.php';
 
 /*Table Removal After Uninstalling the plugin*/
 
@@ -82,12 +85,15 @@ function wpwa_load_textdomain() {
  */
 function activate_wpwa() {
     WPWA_Recurring::activate();
+    WPWA_Whitelist::activate();
+    WPWA_Whitelist_Tracking::activate();
 }
 /**
  * The code that runs during plugin deactivation.
  */
 function deactivate_wpwa() {
     WPWA_Recurring::deactivate();
+    WPWA_Whitelist::deactivate();
 }
 register_activation_hook( __FILE__, 'activate_wpwa' );
 register_deactivation_hook( __FILE__, 'deactivate_wpwa' );
