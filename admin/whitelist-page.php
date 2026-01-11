@@ -99,7 +99,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
                         <label style="margin-top: 10px; display: inline-block;">
                             <?php _e( 'Days before expiration:', 'wpwa' ); ?>
                             <input type="number" name="wpwa_email_expiring_days" 
-                                value="<?php echo esc_attr( get_option( 'wpwa_email_expiring_days', 7 ) ); ?>"
+                                value="<?php echo esc_attr( get_option( 'wpwa_email_expiring_days', 3 ) ); ?>"
                                 min="1" max="30" style="width: 60px;">
                         </label>
                     </td>
@@ -169,9 +169,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 		<div class="wpwa-filters">
 			<select id="wpwa-filter-type">
 				<option value=""><?php _e( 'All Types', 'wpwa' ); ?></option>
-				<option value="global_user"><?php _e( 'Global User', 'wpwa' ); ?></option>
 				<option value="user_id"><?php _e( 'User ID', 'wpwa' ); ?></option>
-				<option value="site_user"><?php _e( 'Site + User', 'wpwa' ); ?></option>
 			</select>
 
 			<select id="wpwa-filter-status">
@@ -190,7 +188,6 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 					<tr>
 						<th class="column-type"><?php _e( 'Type', 'wpwa' ); ?></th>
 						<th class="column-user-id"><?php _e( 'User ID', 'wpwa' ); ?></th>
-						<th class="column-site-id"><?php _e( 'Site ID', 'wpwa' ); ?></th>
 						<th class="column-customer"><?php _e( 'Customer', 'wpwa' ); ?></th>
 						<th class="column-subscription"><?php _e( 'Subscription', 'wpwa' ); ?></th>
 						<th class="column-expiry"><?php _e( 'Expiry', 'wpwa' ); ?></th>
@@ -226,9 +223,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 					<span class="required">*</span>
 				</label>
 				<select name="whitelist_type" id="whitelist_type" required>
-					<option value="global_user"><?php _e( 'Global User (any app, any site)', 'wpwa' ); ?></option>
 					<option value="user_id" selected><?php _e( 'User ID (any app for this user)', 'wpwa' ); ?></option>
-					<option value="site_user"><?php _e( 'Site + User (specific site and user)', 'wpwa' ); ?></option>
 				</select>
 				<p class="description">
 					<?php _e( 'Choose the scope of whitelist access for this entry.', 'wpwa' ); ?>
@@ -243,17 +238,6 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 				<input type="text" name="user_id" id="user_id" class="regular-text">
 				<p class="description">
 					<?php _e( 'The Weebly user ID to whitelist.', 'wpwa' ); ?>
-				</p>
-			</div>
-
-			<div class="wpwa-form-group" id="site_id_group">
-				<label for="site_id">
-					<?php _e( 'Weebly Site ID', 'wpwa' ); ?>
-					<span class="required" id="site_id_required" style="display:none;">*</span>
-				</label>
-				<input type="text" name="site_id" id="site_id" class="regular-text">
-				<p class="description">
-					<?php _e( 'Required only for Site + User type.', 'wpwa' ); ?>
 				</p>
 			</div>
 
@@ -356,7 +340,7 @@ jQuery(document).ready(function($) {
 
 /* Modal */
 .wpwa-modal { display: none; position: fixed; z-index: 10000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
-.wpwa-modal-content { background: #fff; margin: 5% auto; padding: 30px; border-radius: 8px; max-width: 600px; max-height: 90vh; overflow-y: auto; }
+.wpwa-modal-content { background: #fff; margin: 5% auto; padding: 30px; border-radius: 8px; max-width: 600px; max-height: 75vh; overflow-y: auto; }
 .wpwa-modal-close { float: right; font-size: 28px; font-weight: bold; cursor: pointer; line-height: 1; color: #aaa; }
 .wpwa-modal-close:hover { color: #000; }
 

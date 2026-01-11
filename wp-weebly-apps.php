@@ -44,25 +44,18 @@ $wpwa_plugin_version = '1.0';
 if ( ! defined( 'WPWA_PLUGIN_VERSION' ) )
     define( 'WPWA_PLUGIN_VERSION', '1.0.0' );
 
-/*Plugin Menu Handling*/
 require_once plugin_dir_path( __FILE__ ) . 'admin/admin-ajax-handlers.php';
 require_once plugin_dir_path( __FILE__ ) . 'admin/admin-enqueue.php';
 require_once plugin_dir_path( __FILE__ ) . 'admin/wpwa-analytics.php';
 require_once plugin_dir_path( __FILE__ ) . 'admin/recurring-orders-page.php';
 require_once( plugin_dir_path( __FILE__ ) . 'settings/menu_pages.php');
 add_action('admin_menu', 'wpwa_admin_actions');
-/*Register custom post types*/
 require_once( plugin_dir_path( __FILE__ ) . 'custom_posts/products/products.php');
-//woocommerce integration
 require_once( plugin_dir_path( __FILE__ ) . 'woocommerce/woo-integration.php');
-// recurring functionality
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-recurring.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist.php';
-require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-auto-add.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-emails.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-tracking.php';
-
-/*Table Removal After Uninstalling the plugin*/
 
 register_uninstall_hook('uninstall.php', '');
 

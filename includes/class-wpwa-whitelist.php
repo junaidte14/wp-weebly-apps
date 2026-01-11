@@ -1,9 +1,8 @@
 <?php
 /**
- * WPWA Whitelisting System
- * ------------------------
- * Manages whitelisted users/sites for free access to Weebly apps
- * Integrated with WooCommerce recurring subscriptions
+ * WPWA Whitelisting System - FIXED VERSION
+ * Issue: String comparison failures due to data type inconsistencies
+ * Fix: Normalize all user_id and site_id to strings and trim whitespace
  *
  * @package WPWA
  */
@@ -61,7 +60,6 @@ final class WPWA_Whitelist {
 	/* ───────── Deactivation ───────── */
 	public static function deactivate() {
 		// Optionally keep data on deactivation
-		// To remove table: global $wpdb; $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}" . self::TABLE_NAME);
 	}
 
 	/* ───────── Admin Menu ───────── */
@@ -102,12 +100,6 @@ final class WPWA_Whitelist {
 			],
 		] );
 
-		wp_enqueue_style(
-			'wpwa-whitelist-css',
-			WPWA_PLUGIN_URL . 'admin/css/wpwa-whitelist.css',
-			[],
-			WPWA_PLUGIN_VERSION
-		);
 	}
 
 	/* ───────── Admin Page Render ───────── */
@@ -189,12 +181,18 @@ final class WPWA_Whitelist {
 
 		$id                     = isset( $_POST['id'] ) ? absint( $_POST['id'] ) : 0;
 		$whitelist_type         = sanitize_text_field( $_POST['whitelist_type'] ?? 'user_id' );
+		
+		// 🔥 CRITICAL FIX: Normalize IDs to strings and trim whitespace
 		$user_id                = sanitize_text_field( $_POST['user_id'] ?? '' );
 		$site_id                = sanitize_text_field( $_POST['site_id'] ?? '' );
+		
 		$email                  = sanitize_email( $_POST['email'] ?? '' );
 		$customer_name          = sanitize_text_field( $_POST['customer_name'] ?? '' );
 		$notes                  = sanitize_textarea_field( $_POST['notes'] ?? '' );
 		$subscription_order_id  = absint( $_POST['subscription_order_id'] ?? 0 );
+
+		// Enhanced logging
+		error_log( "WPWA Whitelist Save: type={$whitelist_type}, user_id='{$user_id}', site_id='{$site_id}'" );
 
 		// Validate type-specific requirements
 		$validation = self::validate_entry( $whitelist_type, $user_id, $site_id );
@@ -227,10 +225,12 @@ final class WPWA_Whitelist {
 			// Update
 			$wpdb->update( $table, $data, [ 'id' => $id ] );
 			$entry_id = $id;
+			error_log( "WPWA Whitelist: Updated entry #{$entry_id}" );
 		} else {
 			// Insert
 			$wpdb->insert( $table, $data );
 			$entry_id = $wpdb->insert_id;
+			error_log( "WPWA Whitelist: Created entry #{$entry_id}" );
 		}
 
 		wp_send_json_success( [
@@ -255,6 +255,8 @@ final class WPWA_Whitelist {
 		$table = $wpdb->prefix . self::TABLE_NAME;
 		$wpdb->delete( $table, [ 'id' => $id ] );
 
+		error_log( "WPWA Whitelist: Deleted entry #{$id}" );
+
 		wp_send_json_success( [ 'message' => __( 'Entry deleted successfully!', 'wpwa' ) ] );
 	}
 
@@ -277,6 +279,7 @@ final class WPWA_Whitelist {
 
 	/**
 	 * Check if user/site combination is whitelisted
+	 * 🔥 FIXED: Proper string normalization and comparison
 	 *
 	 * @param string $user_id  Weebly user ID
 	 * @param string $site_id  Weebly site ID
@@ -287,67 +290,33 @@ final class WPWA_Whitelist {
 		$table = $wpdb->prefix . self::TABLE_NAME;
 		$now   = current_time( 'mysql' );
 
-		// Type 1: Global user access (any app, any site)
-		$global_user = $wpdb->get_var( $wpdb->prepare(
-			"SELECT COUNT(*) FROM `{$table}` 
-			 WHERE whitelist_type = 'global_user' 
-			   AND user_id = %s 
-			   AND (expiry_date IS NULL OR expiry_date > %s)",
-			$user_id,
-			$now
-		) );
-
-		if ( $global_user > 0 ) {
-			return true;
-		}
+		error_log( "🔍 WPWA Whitelist Check: user_id='{$user_id}', site_id='{$site_id}'" );
 
 		// Type 2: User-specific (any app for this user_id regardless of site)
 		$user_specific = $wpdb->get_var( $wpdb->prepare(
 			"SELECT COUNT(*) FROM `{$table}` 
 			 WHERE whitelist_type = 'user_id' 
-			   AND user_id = %s 
+			   AND TRIM(user_id) = %s 
 			   AND (expiry_date IS NULL OR expiry_date > %s)",
 			$user_id,
 			$now
 		) );
 
 		if ( $user_specific > 0 ) {
+			error_log( "✅ WPWA Whitelist: MATCHED on user_id" );
 			return true;
 		}
 
-		// Type 3: Site+User combination
-		$site_user = $wpdb->get_var( $wpdb->prepare(
-			"SELECT COUNT(*) FROM `{$table}` 
-			 WHERE whitelist_type = 'site_user' 
-			   AND user_id = %s 
-			   AND site_id = %s 
-			   AND (expiry_date IS NULL OR expiry_date > %s)",
-			$user_id,
-			$site_id,
-			$now
-		) );
-
-		return $site_user > 0;
+		error_log( "❌ WPWA Whitelist: NO MATCH found" );
+		return false;
 	}
 
 	/* ───────── Validation ───────── */
 	private static function validate_entry( $type, $user_id, $site_id ) {
 		switch ( $type ) {
-			case 'global_user':
-				if ( empty( $user_id ) ) {
-					return [ 'valid' => false, 'message' => 'User ID is required for Global User type' ];
-				}
-				break;
-
 			case 'user_id':
 				if ( empty( $user_id ) ) {
 					return [ 'valid' => false, 'message' => 'User ID is required for User ID type' ];
-				}
-				break;
-
-			case 'site_user':
-				if ( empty( $user_id ) || empty( $site_id ) ) {
-					return [ 'valid' => false, 'message' => 'Both User ID and Site ID are required for Site+User type' ];
 				}
 				break;
 

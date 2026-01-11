@@ -1,9 +1,7 @@
 <?php
 /**
- * Modified phase_one.php with Whitelist Integration & Usage Tracking
+ * FIXED phase_one.php with Proper Whitelist Integration
  * File: payments/phase_one.php
- * 
- * This replaces the existing phase_one.php file
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -11,17 +9,6 @@ defined( 'ABSPATH' ) || exit;
 /* ========== libs ========== */
 require_once WPWA_BASE_DIR . '/libs/lib/Util/HMAC.php';
 require_once WPWA_BASE_DIR . '/libs/lib/Weebly/WeeblyClient.php';
-
-/* ========== tiny debug helper ========== */
-if ( ! function_exists( 'wpwa_dbg' ) ) {
-	function wpwa_dbg( $label, $data = '' ) {
-		if ( ! defined( 'WP_DEBUG' ) || ! WP_DEBUG ) { return; }
-		echo '<pre style="background:#eee;border:1px solid #bbb;padding:6px;margin:6px 0">'
-		     . htmlspecialchars( $label . ( is_scalar( $data ) ? $data : print_r( $data, true ) ) )
-		     . '</pre>';
-		@flush();
-	}
-}
 
 /* ========== legacy "?…?" fixer ========== */
 if ( strpos( $_SERVER['QUERY_STRING'], '?' ) !== false && ! isset( $_GET['do_replace'] ) ) {
@@ -57,15 +44,15 @@ if ( isset( $_GET['authorization_code'], $_GET['pr_id'] ) ) {
 
 	// Validate product
 	if ( ! $pr_id || get_post_type( $pr_id ) !== 'product' || get_post_status( $pr_id ) !== 'publish' || ! wc_get_product( $pr_id ) ) {
-		error_log("Phase-2: pr_id validation failed, trying fallback {$pr_id}");
 		$pr_id = intval( get_post_meta( $pr_id, 'woowa_product_id', true ) );
-		error_log("Phase-2: fallback pr_id {$pr_id}");
 	}
 
 	$cid  = _wpwa_meta( $pr_id, [ 'woowa_product_client_id','wpwa_product_client_id','weebly_product_client_id','wapp_product_client_id' ] );
 	$csec = _wpwa_meta( $pr_id, [ 'woowa_product_secret_key','wpwa_product_secret_key','weebly_product_secret_key','wapp_product_secret_key' ] );
 
-	if ( ! $cid || ! $csec ) { wp_die( 'Phase-2: missing client creds' ); }
+	if ( ! $cid || ! $csec ) { 
+		wp_die( 'Phase-2: missing client creds' ); 
+	}
 
 	$wc = new WeeblyClient( $cid, $csec, $user, $site, null );
 	$tok = $wc->getAccessToken( $code, $cb_url );
@@ -75,16 +62,13 @@ if ( isset( $_GET['authorization_code'], $_GET['pr_id'] ) ) {
 	}
 
 	$access = $tok->access_token;
-
 	/* ═══════════════════════════════════════════════════════════════
-	 *  WHITELIST CHECK - Skip payment if whitelisted
+	 *  WHITELIST CHECK
 	 * ═══════════════════════════════════════════════════════════════ */
 	if ( class_exists( 'WPWA_Whitelist' ) && WPWA_Whitelist::is_whitelisted( $user, $site ) ) {
-		error_log( "WPWA: User {$user} / Site {$site} is WHITELISTED - granting free access" );
-
 		// ✅ LOG USAGE TRACKING
 		if ( class_exists( 'WPWA_Whitelist_Tracking' ) ) {
-			WPWA_Whitelist_Tracking::log_usage( $user, $site, $pr_id, 'install' );
+			$track_result = WPWA_Whitelist_Tracking::log_usage( $user, $site, $pr_id, 'install' );
 		}
 
 		// Redirect to Weebly finish URL
@@ -93,11 +77,12 @@ if ( isset( $_GET['authorization_code'], $_GET['pr_id'] ) ) {
 			return $hosts;
 		});
 
-		wp_safe_redirect( $tok->callback_url );
+		$redirect_url = $tok->callback_url;
+		wp_safe_redirect( $redirect_url );
 		exit;
 	}
 
-	/* ─────── Regular flow continues ─────── */
+	/* ─────── Check for existing order (recurring renewal case) ─────── */
 	$order = woowa_check_if_order_exists( $pr_id, $site, $user );
 
 	if ( ! $order ) {
@@ -146,7 +131,9 @@ if ( isset( $_GET['pr_id'] ) ) {
 $cid  = _wpwa_meta( $pr_id, [ 'woowa_product_client_id','wpwa_product_client_id','weebly_product_client_id','wapp_product_client_id' ] );
 $csec = _wpwa_meta( $pr_id, [ 'woowa_product_secret_key','wpwa_product_secret_key','weebly_product_secret_key','wapp_product_secret_key' ] );
 
-if ( ! $cid || ! $csec ) { wp_die( 'Phase-1: missing client creds' ); }
+if ( ! $cid || ! $csec ) { 
+	wp_die( 'Phase-1: missing client creds' ); 
+}
 
 $hmac_parts = [ 'user_id' => $_GET['user_id'] ?? '', 'timestamp' => $_GET['timestamp'] ?? '' ];
 if ( isset( $_GET['site_id'] ) ) { $hmac_parts['site_id'] = $_GET['site_id']; }
