@@ -81,7 +81,6 @@ final class WPWA_Recurring {
 		// Pricing
 		add_filter( 'woocommerce_product_get_price', [ $this, 'filter_product_price' ], 20, 2 );
 		add_filter( 'woocommerce_product_variation_get_price', [ $this, 'filter_product_price' ], 20, 2 );
-		add_action( 'woocommerce_before_calculate_totals', [ $this, 'inject_cart_price' ], 20 );
 
 		// Order workflow
 		add_action( 'woocommerce_order_status_completed', [ $this, 'handle_order_completed' ], 10, 2 );
@@ -371,22 +370,6 @@ final class WPWA_Recurring {
 
 		$cycle_price = $product->get_meta( self::META_CYCLE_PRICE );
 		return $cycle_price !== '' ? wc_format_decimal( $cycle_price ) : $price;
-	}
-
-	public function inject_cart_price( $cart ) {
-		if ( did_action( 'woocommerce_before_calculate_totals' ) > 1 ) {
-			return;
-		}
-
-		foreach ( $cart->get_cart() as $item ) {
-			$product = $item['data'];
-			if ( 'yes' === $product->get_meta( self::META_KEY_FLAG ) ) {
-				$cp = $product->get_meta( self::META_CYCLE_PRICE );
-				if ( $cp !== '' ) {
-					$product->set_price( wc_format_decimal( $cp ) );
-				}
-			}
-		}
 	}
 
 	/* =================================================================

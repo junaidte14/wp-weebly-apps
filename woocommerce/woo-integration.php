@@ -1207,55 +1207,182 @@ function wpwa_show_final_step_notice_multiple_with_names( $order ) {
 /**
  * 1. Frontend: Display Duration Selector on Product Page
  */
-add_action( 'woocommerce_before_add_to_cart_button', 'wpwa_render_duration_field' );
-function wpwa_render_duration_field() {
+/**
+ * Display duration selector on single product pages
+ * PRIORITY 5: Runs early to show before price
+ */
+add_action('woocommerce_before_add_to_cart_button', 'wpwa_render_duration_selector_on_product', 5);
+function wpwa_render_duration_selector_on_product() {
     global $product;
-
-    // Only show if enabled in your Recurring Class settings
-    if ( 'yes' !== $product->get_meta( '_wpwa_enable_duration_selector' ) ) {
+    
+    if (!$product) return;
+    
+    // Check if this is whitelist product OR has duration enabled
+    $whitelist_product_id = WPWA_Whitelist::get_whitelist_product_id();
+    $is_whitelist = ($product->get_id() == $whitelist_product_id);
+    $duration_enabled = ('yes' === $product->get_meta('_wpwa_enable_duration_selector'));
+    
+    if (!$is_whitelist && !$duration_enabled) {
         return;
     }
-
-    $raw_durations = $product->get_meta( '_wpwa_available_durations' );
-    $durations = array_map( 'absint', explode( ',', $raw_durations ) );
-    $default   = $product->get_meta( '_wpwa_default_duration' );
     
-    // Sort durations to be tidy
-    sort( $durations );
-
-    echo '<div class="wpwa-duration-selector" style="margin-bottom: 15px;">';
-    echo '<label for="subscription_duration" style="display:block; margin-bottom:5px; font-weight:600;">' . __( 'Select Duration', 'wpwa' ) . '</label>';
-    echo '<select name="subscription_duration" id="subscription_duration" class="widefat">';
+    // Get configuration
+    $durations_raw = $product->get_meta('_wpwa_available_durations');
+    $durations = array_filter(array_map('absint', explode(',', $durations_raw ?: '1,3,6,12')));
+    sort($durations);
     
-    foreach ( $durations as $duration ) {
-        if ( $duration < 1 ) continue;
-        $label = sprintf( _n( '%s Cycle', '%s Cycles', $duration, 'wpwa' ), $duration );
-        
-        // Optional: Add "Best Value" text for 6+ months
-        if ( $duration >= 6 ) {
-             $discount = $product->get_meta( '_wpwa_duration_discount' );
-             if ( $discount ) {
-                 $label .= " (Save {$discount}%)";
-             }
-        }
-        
-        echo '<option value="' . esc_attr( $duration ) . '" ' . selected( $duration, $default, false ) . '>' . esc_html( $label ) . '</option>';
+    $default_duration = absint($product->get_meta('_wpwa_default_duration')) ?: 1;
+    $discount = absint($product->get_meta('_wpwa_duration_discount'));
+    
+    // Get pricing info
+    $base_price = floatval($product->get_price());
+    $cycle_unit = $product->get_meta(WPWA_Recurring::META_CYCLE_UNIT) ?: 'month';
+    
+    if (count($durations) <= 1) {
+        return; // Only one option, no need for selector
     }
     
-    echo '</select>';
-    echo '</div>';
+    ?>
+    <div class="wpwa-product-duration-selector" style="margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 8px;">
+        <label style="display: block; font-weight: 600; margin-bottom: 12px; font-size: 16px;">
+            <?php esc_html_e('Select Subscription Duration:', 'wpwa'); ?>
+        </label>
+        
+        <div class="wpwa-duration-options" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 15px;">
+            <?php foreach ($durations as $duration): 
+                $total_price = $base_price * $duration;
+                
+                // Apply discount for 6+ cycles
+                if ($duration >= 6 && $discount > 0) {
+                    $discount_amount = ($total_price * $discount) / 100;
+                    $total_price -= $discount_amount;
+                }
+                
+                $is_default = ($duration == $default_duration);
+            ?>
+                <div class="wpwa-duration-option" style="position: relative;">
+                    <input type="radio" 
+                           name="subscription_duration" 
+                           id="duration_<?php echo $duration; ?>" 
+                           value="<?php echo $duration; ?>"
+                           data-base-price="<?php echo $base_price; ?>"
+                           data-duration="<?php echo $duration; ?>"
+                           data-discount="<?php echo $discount; ?>"
+                           <?php checked($is_default); ?>
+                           style="position: absolute; opacity: 0;">
+                    <label for="duration_<?php echo $duration; ?>" 
+                           style="display: block; padding: 15px; border: 2px solid #ddd; border-radius: 8px; text-align: center; cursor: pointer; transition: all 0.2s; background: #fff;">
+                        <strong style="display: block; font-size: 18px; color: #2271b1;">
+                            <?php echo $duration; ?> <?php echo ($duration === 1) ? esc_html($cycle_unit) : esc_html($cycle_unit . 's'); ?>
+                        </strong>
+                        <span class="duration-price" style="display: block; margin-top: 8px; font-size: 14px; color: #666;">
+                            <?php echo wc_price($total_price); ?>
+                        </span>
+                        <?php if ($duration >= 6 && $discount > 0): ?>
+                            <span style="display: block; margin-top: 4px; color: #48bb78; font-weight: 600; font-size: 12px;">
+                                Save <?php echo $discount; ?>%
+                            </span>
+                        <?php endif; ?>
+                    </label>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        
+        <div id="wpwa-duration-summary" style="padding: 15px; background: #fff; border-radius: 4px; border-left: 4px solid #2271b1;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong style="color: #2271b1;">Total Price:</strong>
+                    <span id="wpwa-total-price" style="font-size: 24px; font-weight: 700; margin-left: 10px;">
+                        <?php echo wc_price($base_price * $default_duration); ?>
+                    </span>
+                </div>
+                <div style="text-align: right; font-size: 13px; color: #666;">
+                    <span id="wpwa-per-cycle-price"><?php echo wc_price($base_price); ?></span> per <?php echo esc_html($cycle_unit); ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <style>
+        .wpwa-duration-option input[type="radio"]:checked + label {
+            border-color: #2271b1;
+            background: #ebf4ff;
+            box-shadow: 0 2px 8px rgba(34, 113, 177, 0.2);
+        }
+        .wpwa-duration-option label:hover {
+            border-color: #2271b1;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+    </style>
+    
+    <script>
+    (function($) {
+        $(document).ready(function() {
+            const $options = $('input[name="subscription_duration"]');
+            const $totalPrice = $('#wpwa-total-price');
+            const basePrice = parseFloat($options.first().data('base-price'));
+            const discount = parseInt($options.first().data('discount')) || 0;
+            
+            function updatePricing() {
+                const $selected = $('input[name="subscription_duration"]:checked');
+                const duration = parseInt($selected.data('duration'));
+                
+                let total = basePrice * duration;
+                
+                // Apply discount for 6+ cycles
+                if (duration >= 6 && discount > 0) {
+                    total -= (total * discount / 100);
+                }
+                
+                // Update display with animation
+                $totalPrice.css('opacity', '0.5');
+                setTimeout(function() {
+                    $totalPrice.html('<?php echo get_woocommerce_currency_symbol(); ?>' + total.toFixed(2));
+                    $totalPrice.css('opacity', '1');
+                }, 150);
+            }
+            
+            $options.on('change', updatePricing);
+            updatePricing(); // Initial update
+        });
+    })(jQuery);
+    </script>
+    <?php
 }
 
 /**
  * 2. Cart Data: Save the selection to the Cart Item
  */
-add_filter( 'woocommerce_add_cart_item_data', 'wpwa_save_duration_to_cart', 10, 3 );
-function wpwa_save_duration_to_cart( $cart_item_data, $product_id, $variation_id ) {
-    if ( isset( $_POST['subscription_duration'] ) ) {
-        $cart_item_data['subscription_duration'] = absint( $_POST['subscription_duration'] );
-        
-        // Make the cart item unique so they can have different durations for the same product
-        $cart_item_data['unique_key'] = md5( microtime() . rand() ); 
+add_filter('woocommerce_add_cart_item_data', 'wpwa_consolidated_add_cart_data', 10, 3);
+function wpwa_consolidated_add_cart_data($cart_item_data, $product_id, $variation_id) {   
+    // ===== DURATION DATA =====
+    if (isset($_POST['subscription_duration'])) {
+        $cart_item_data['subscription_duration'] = absint($_POST['subscription_duration']);
+        $cart_item_data['unique_key'] = md5(microtime() . rand()); // Make unique
+    }
+    // ===== WEEBLY USER DATA (FROM URL OR POST) =====
+    // Check session first (set by wpwa_capture_weebly_params_from_url)
+    $weebly_user_id = WC()->session->get('wpwa_weebly_user_id');
+    // Fallback to POST data
+    if (!$weebly_user_id && isset($_POST['user_id'])) {
+        $weebly_user_id = sanitize_text_field($_POST['user_id']);
+    }
+    // Store ONLY as user_id (NOT weebly_user_id to avoid duplication)
+    if ($weebly_user_id) {
+        $cart_item_data['user_id'] = $weebly_user_id;
+    }
+    // ===== WEEBLY SITE DATA =====
+    if (isset($_POST['site_id'])) {
+        $cart_item_data['site_id'] = sanitize_text_field($_POST['site_id']);
+    }
+    // ===== WEEBLY ACCESS TOKEN =====
+    if (isset($_POST['access_token'])) {
+        $cart_item_data['access_token'] = sanitize_text_field($_POST['access_token']);
+    }
+    // ===== WEEBLY FINAL URL =====
+    if (isset($_POST['final_url'])) {
+        $cart_item_data['final_url'] = sanitize_text_field($_POST['final_url']);
     }
     return $cart_item_data;
 }
@@ -1288,15 +1415,15 @@ function wpwa_display_duration_in_cart( $item_data, $cart_item ) {
 /**
  * Capture weebly_user_id and duration from query parameter and store in session
  */
-add_action( 'wp_loaded', 'wpwa_capture_weebly_params_from_url' );
+add_action('wp_loaded', 'wpwa_capture_weebly_params_from_url');
 function wpwa_capture_weebly_params_from_url() {
-	if ( isset( $_GET['weebly_user_id'] ) && ! empty( $_GET['weebly_user_id'] ) ) {
-		WC()->session->set( 'wpwa_weebly_user_id', sanitize_text_field( $_GET['weebly_user_id'] ) );
-	}
-	
-	if ( isset( $_GET['duration'] ) && ! empty( $_GET['duration'] ) ) {
-		WC()->session->set( 'wpwa_subscription_duration', absint( $_GET['duration'] ) );
-	}
+    if (isset($_GET['weebly_user_id']) && !empty($_GET['weebly_user_id'])) {
+        WC()->session->set('wpwa_weebly_user_id', sanitize_text_field($_GET['weebly_user_id']));
+    }
+    
+    if (isset($_GET['duration']) && !empty($_GET['duration'])) {
+        WC()->session->set('wpwa_subscription_duration', absint($_GET['duration']));
+    }
 }
 
 /**
@@ -1330,152 +1457,164 @@ function wpwa_add_whitelist_params_to_cart( $cart_item_data, $product_id, $varia
 /**
  * Display weebly_user_id in cart (optional, for transparency)
  */
-add_filter( 'woocommerce_get_item_data', 'wpwa_display_whitelist_params_in_cart', 10, 2 );
-function wpwa_display_whitelist_params_in_cart( $item_data, $cart_item ) {
-	if ( isset( $cart_item['weebly_user_id'] ) ) {
-		$item_data[] = array(
-			'key'   => __( 'Weebly User ID', 'wpwa' ),
-			'value' => esc_html( substr( $cart_item['weebly_user_id'], 0, 20 ) . '...' ),
-		);
-	}
-	
-	if ( isset( $cart_item['subscription_duration'] ) && $cart_item['subscription_duration'] > 1 ) {
-		$item_data[] = array(
-			'key'   => __( 'Subscription Duration', 'wpwa' ),
-			'value' => sprintf( __( '%d cycles (prepaid)', 'wpwa' ), $cart_item['subscription_duration'] ),
-		);
-	}
-	
-	return $item_data;
+add_filter('woocommerce_get_item_data', 'wpwa_consolidated_display_cart_item_data', 10, 2);
+function wpwa_consolidated_display_cart_item_data($item_data, $cart_item) {
+    // Show duration
+    if (isset($cart_item['subscription_duration'])) {
+        $item_data[] = [
+            'key'   => __('Duration', 'wpwa'),
+            'value' => sprintf(_n('%s Cycle', '%s Cycles', $cart_item['subscription_duration'], 'wpwa'), $cart_item['subscription_duration']),
+        ];
+    }
+    // Show user_id (NOT weebly_user_id - single source of truth)
+    if (isset($cart_item['user_id'])) {
+        $item_data[] = [
+            'key'   => __('Weebly User ID', 'wpwa'),
+            'value' => esc_html(substr($cart_item['user_id'], 0, 20) . '...'),
+        ];
+    }
+    // Show site_id
+    if (isset($cart_item['site_id'])) {
+        $item_data[] = [
+            'key'   => __('Site ID', 'wpwa'),
+            'value' => wc_clean($cart_item['site_id']),
+        ];
+    }
+    return $item_data;
 }
 
 /**
  * Adjust cart item price based on duration
  */
-add_action( 'woocommerce_before_calculate_totals', 'wpwa_adjust_whitelist_price_by_duration', 30 );
-function wpwa_adjust_whitelist_price_by_duration( $cart ) {
-	$whitelist_product_id = WPWA_Whitelist::get_whitelist_product_id();
-	foreach ( $cart->get_cart() as $cart_item ) {
-		if ( (int) $cart_item['product_id'] !== (int) $whitelist_product_id ) {
-			continue;
-		}
-		
-		$duration = absint( $cart_item['subscription_duration'] ?? 1 );
-		
-		// Only apply discount for 6+ cycles
-		if ( $duration >= 6 ) {
-			$discount_percent = absint( get_post_meta( $whitelist_product_id, '_wpwa_duration_discount', true ) );
-			
-			if ( $discount_percent > 0 ) {
-				$product = $cart_item['data'];
-				$current_price = floatval( $product->get_price() );
-				
-				// Calculate discount (already multiplied by duration in previous hook)
-				$discount_amount = ( $current_price * $discount_percent ) / 100;
-				$new_price = $current_price - $discount_amount;
-				
-				$product->set_price( $new_price );
-			}
-		}
-	}
+add_action('woocommerce_before_calculate_totals', 'wpwa_consolidated_adjust_cart_prices', 30);
+function wpwa_consolidated_adjust_cart_prices($cart) {   
+    if (is_admin() && !defined('DOING_AJAX')) {
+        return;
+    }
+    // Prevent infinite loops
+    if (did_action('woocommerce_before_calculate_totals') >= 2) {
+        return;
+    }
+    $whitelist_product_id = WPWA_Whitelist::get_whitelist_product_id();
+    foreach ($cart->get_cart() as $cart_item_key => $cart_item) {
+        $product = $cart_item['data'];
+        $product_id = $product->get_id();
+        // Check if this is whitelist product or has duration enabled
+        $is_whitelist = ($product_id == $whitelist_product_id);
+        $is_recurring = ('yes' === $product->get_meta('_wpwa_is_recurring'));
+        if (!$is_whitelist && !$is_recurring) {
+            continue;
+        }
+        // Get duration (default to 1)
+        $duration = isset($cart_item['subscription_duration']) ? absint($cart_item['subscription_duration']) : 1;
+        // Get base price
+        $base_price = floatval($product->get_price());
+        // Calculate total price
+        $total_price = $base_price * $duration;
+        // Apply discount for 6+ cycles
+        if ($duration >= 6) {
+            $discount = absint(get_post_meta($product_id, '_wpwa_duration_discount', true));
+            if ($discount > 0) {
+                $discount_amount = ($total_price * $discount) / 100;
+                $total_price -= $discount_amount;
+            }
+        }
+        // Set the new price
+        $product->set_price($total_price);
+    }
 }
 
 /**
  * Show duration discount in cart/checkout
  */
-add_filter( 'woocommerce_cart_item_price', 'wpwa_show_duration_discount_in_cart', 10, 3 );
-function wpwa_show_duration_discount_in_cart( $price_html, $cart_item, $cart_item_key ) {
-	$whitelist_product_id = WPWA_Whitelist::get_whitelist_product_id();
-	
-	if ( (int) $cart_item['product_id'] !== (int) $whitelist_product_id ) {
-		return $price_html;
-	}
-	
-	$duration = absint( $cart_item['subscription_duration'] ?? 1 );
-	
-	if ( $duration >= 6 ) {
-		$discount = absint( get_post_meta( $whitelist_product_id, '_wpwa_duration_discount', true ) );
-		
-		if ( $discount > 0 ) {
-			$price_html .= '<br><small class="wpwa-discount-applied" style="color:#48bb78;font-weight:600;">🎉 ' . 
-			               sprintf( __( '%d%% prepay discount applied!', 'wpwa' ), $discount ) . 
-			               '</small>';
-		}
-	}
-	
-	return $price_html;
+add_filter('woocommerce_cart_item_price', 'wpwa_show_duration_discount_in_cart', 10, 3);
+function wpwa_show_duration_discount_in_cart($price_html, $cart_item, $cart_item_key) {
+    $duration = isset($cart_item['subscription_duration']) ? absint($cart_item['subscription_duration']) : 1;
+    if ($duration < 6) {
+        return $price_html;
+    }
+    $product = $cart_item['data'];
+    $discount = absint(get_post_meta($product->get_id(), '_wpwa_duration_discount', true));
+    if ($discount > 0) {
+        $price_html .= '<br><small class="wpwa-discount-applied" style="color:#48bb78;font-weight:600;">';
+        $price_html .= '🎉 ' . sprintf(__('%d%% prepay discount applied!', 'wpwa'), $discount);
+        $price_html .= '</small>';
+    }   
+    return $price_html;
 }
 
 /**
  * Store weebly_user_id and duration in order item meta
  */
-add_action( 'woocommerce_checkout_create_order_line_item', 'wpwa_save_whitelist_params_to_order_item', 20, 4 );
-function wpwa_save_whitelist_params_to_order_item( $item, $cart_item_key, $values, $order ) {
-	if ( isset( $values['weebly_user_id'] ) && ! empty( $values['weebly_user_id'] ) ) {
-		$item->add_meta_data( 'weebly_user_id', $values['weebly_user_id'], true );
-		$item->add_meta_data( 'user_id', $values['weebly_user_id'], true ); // For consistency
-	}
-	
-	if ( isset( $values['subscription_duration'] ) && $values['subscription_duration'] > 1 ) {
-		$item->add_meta_data( '_wpwa_subscription_duration', $values['subscription_duration'], true );
-		$item->add_meta_data( '_wpwa_prepaid_cycles', $values['subscription_duration'], true );
-	}
+add_action('woocommerce_checkout_create_order_line_item', 'wpwa_consolidated_save_order_item_meta', 20, 4);
+function wpwa_consolidated_save_order_item_meta($item, $cart_item_key, $values, $order) {
+    // Save duration
+    if (isset($values['subscription_duration']) && $values['subscription_duration'] > 1) {
+        $item->add_meta_data('_wpwa_subscription_duration', $values['subscription_duration'], true);
+        $item->add_meta_data('_wpwa_prepaid_cycles', $values['subscription_duration'], true);
+    }
+    // Save user_id (SINGLE SOURCE - not weebly_user_id)
+    if (isset($values['user_id'])) {
+        $item->add_meta_data('user_id', $values['user_id'], true);
+    }
+    // Save site_id
+    if (isset($values['site_id'])) {
+        $item->add_meta_data('site_id', $values['site_id'], true);
+    }
+    // Save access_token
+    if (isset($values['access_token'])) {
+        $item->add_meta_data('access_token', $values['access_token'], true);
+    }   
+    // Save final_url
+    if (isset($values['final_url'])) {
+        $item->add_meta_data('final_url', $values['final_url'], true);
+    }
 }
 
 /**
  * Store weebly_user_id in order meta (for auto-whitelist to work)
  */
-add_action( 'woocommerce_checkout_order_processed', 'wpwa_save_weebly_user_id_to_order', 10, 1 );
-function wpwa_save_weebly_user_id_to_order( $order_id ) {
-	$order = wc_get_order( $order_id );
-	if ( ! $order ) {
-		return;
-	}
-	
-	$whitelist_product_id = WPWA_Whitelist::get_whitelist_product_id();
-	
-	foreach ( $order->get_items() as $item ) {
-		if ( (int) $item->get_product_id() !== (int) $whitelist_product_id ) {
-			continue;
-		}
-		
-		$weebly_user_id = $item->get_meta( 'weebly_user_id' );
-		if ( $weebly_user_id ) {
-			// Store in order meta
-			$order->update_meta_data( 'weebly_user_id', $weebly_user_id );
-			$order->save();
-			
-			// Add order note
-			$order->add_order_note( sprintf(
-				__( 'Whitelist subscription purchased by Weebly User: %s', 'wpwa' ),
-				$weebly_user_id
-			) );
-			
-			break;
-		}
-	}
-	
-	// Clear session
-	WC()->session->__unset( 'wpwa_weebly_user_id' );
-	WC()->session->__unset( 'wpwa_subscription_duration' );
+add_action('woocommerce_checkout_order_processed', 'wpwa_save_user_id_to_order_meta', 10, 1);
+function wpwa_save_user_id_to_order_meta($order_id) {
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        return;
+    }
+    $whitelist_product_id = WPWA_Whitelist::get_whitelist_product_id();
+    foreach ($order->get_items() as $item) {
+        if ((int)$item->get_product_id() !== (int)$whitelist_product_id) {
+            continue;
+        }
+        $user_id = $item->get_meta('user_id');
+        if ($user_id) {
+            // Save to order meta
+            $order->update_meta_data('weebly_user_id', $user_id);
+            $order->save();
+            // Add order note
+            $order->add_order_note(sprintf(
+                __('Whitelist subscription purchased by Weebly User: %s', 'wpwa'),
+                $user_id
+            ));       
+            break;
+        }
+    }   
+    // Clear session
+    WC()->session->__unset('wpwa_weebly_user_id');
+    WC()->session->__unset('wpwa_subscription_duration');
 }
 
 /**
  * Adjust recurring product expiry based on prepaid duration
  */
-add_filter( 'wpwa_recurring_calculate_expiry', 'wpwa_adjust_expiry_for_prepaid_duration', 10, 3 );
-function wpwa_adjust_expiry_for_prepaid_duration( $expiry_timestamp, $item, $product ) {
-	$duration = absint( $item->get_meta( '_wpwa_prepaid_cycles' ) );
-	
-	if ( $duration > 1 ) {
-		$cycle_length = absint( $product->get_meta( WPWA_Recurring::META_CYCLE_LENGTH ) );
-		$cycle_unit = $product->get_meta( WPWA_Recurring::META_CYCLE_UNIT );
-		
-		// Calculate total duration
-		$total_length = $cycle_length * $duration;
-		
-		$expiry_timestamp = strtotime( "+{$total_length} {$cycle_unit}" );
-	}
-	
-	return $expiry_timestamp;
+add_filter('wpwa_recurring_calculate_expiry', 'wpwa_adjust_expiry_for_prepaid_duration', 10, 3);
+function wpwa_adjust_expiry_for_prepaid_duration($expiry_timestamp, $item, $product) {
+    $duration = absint($item->get_meta('_wpwa_prepaid_cycles'));
+    if ($duration <= 1) {
+        return $expiry_timestamp;
+    }
+    $cycle_length = absint($product->get_meta(WPWA_Recurring::META_CYCLE_LENGTH));
+    $cycle_unit = $product->get_meta(WPWA_Recurring::META_CYCLE_UNIT);
+    // Calculate total duration
+    $total_length = $cycle_length * $duration;   
+    return strtotime("+{$total_length} {$cycle_unit}");
 }
