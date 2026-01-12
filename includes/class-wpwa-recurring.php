@@ -214,7 +214,77 @@ final class WPWA_Recurring {
 			'description' => __( 'Enable automatic renewal (requires payment gateway support)', 'wpwa' ),
 			'desc_tip'    => true,
 		] );
+		echo '<div class="wpwa-duration-options-section1" style="padding-left: 12px; border-left: 3px solid #48bb78; margin-top: 15px;">';
 
+		echo '<h4 style="margin: 0 0 12px; color: #2d3748;">' . __( 'Prepaid Duration Options', 'wpwa' ) . '</h4>';
+		echo '<p class="description" style="margin-bottom: 15px;">' . 
+			__( 'Allow customers to prepay for multiple billing cycles at checkout. This is ideal for whitelist subscriptions.', 'wpwa' ) . 
+			'</p>';
+
+		// Enable duration selector
+		woocommerce_wp_checkbox( [
+			'id'          => '_wpwa_enable_duration_selector',
+			'label'       => __( 'Enable Duration Options', 'wpwa' ),
+			'description' => __( 'Show duration selector at checkout', 'wpwa' ),
+			'desc_tip'    => true,
+		] );
+		echo '<div class="wpwa-duration-options-section">';
+		// Available durations
+		woocommerce_wp_text_input( [
+			'id'          => '_wpwa_available_durations',
+			'label'       => __( 'Available Durations', 'wpwa' ),
+			'desc_tip'    => true,
+			'description' => __( 'Comma-separated numbers (e.g., 1,3,6,12). Represents number of billing cycles.', 'wpwa' ),
+			'placeholder' => '1,3,6,12',
+			'value'       => get_post_meta( get_the_ID(), '_wpwa_available_durations', true ) ?: '1,3,6,12',
+		] );
+
+		// Default duration
+		woocommerce_wp_select( [
+			'id'      => '_wpwa_default_duration',
+			'label'   => __( 'Default Duration', 'wpwa' ),
+			'options' => [
+				'1'  => '1 cycle',
+				'3'  => '3 cycles',
+				'6'  => '6 cycles',
+				'12' => '12 cycles',
+			],
+			'desc_tip'    => true,
+			'description' => __( 'Pre-selected duration option', 'wpwa' ),
+		] );
+
+		// Discount for longer durations
+		woocommerce_wp_text_input( [
+			'id'          => '_wpwa_duration_discount',
+			'label'       => __( 'Multi-Cycle Discount (%)', 'wpwa' ),
+			'type'        => 'number',
+			'custom_attributes' => [ 'min' => 0, 'max' => 50, 'step' => 1 ],
+			'desc_tip'    => true,
+			'description' => __( 'Optional: Percentage discount for customers who prepay 6+ cycles', 'wpwa' ),
+			'placeholder' => '0',
+		] );
+		echo '</div>';
+
+		echo '</div>'; // .wpwa-duration-options-section
+
+		// Add inline script for conditional display
+		wp_add_inline_script( 'wpwa-recurring-admin', '
+		jQuery(document).ready(function($) {
+			function toggleDurationFields() {
+				const $checkbox = $("#_wpwa_enable_duration_selector");
+				const $section = $(".wpwa-duration-options-section").find("p, .form-field");
+				
+				if ($checkbox.is(":checked")) {
+					$section.slideDown(200);
+				} else {
+					$section.slideUp(200);
+				}
+			}
+			
+			toggleDurationFields();
+			$("#_wpwa_enable_duration_selector").on("change", toggleDurationFields);
+		});
+		' );
 		echo '</div>'; // .wpwa-recurring-fields
 		echo '</div>'; // .options_group
 	}
@@ -244,6 +314,25 @@ final class WPWA_Recurring {
 			
 			$auto_renew = isset( $_POST[ self::META_AUTO_RENEW ] ) ? 'yes' : 'no';
 			$product->update_meta_data( self::META_AUTO_RENEW, $auto_renew );
+
+			// Duration options
+			$enable_duration = isset( $_POST['_wpwa_enable_duration_selector'] ) ? 'yes' : 'no';
+			$product->update_meta_data( '_wpwa_enable_duration_selector', $enable_duration );
+			
+			if ( isset( $_POST['_wpwa_available_durations'] ) ) {
+				$durations = sanitize_text_field( $_POST['_wpwa_available_durations'] );
+				$product->update_meta_data( '_wpwa_available_durations', $durations );
+			}
+			
+			if ( isset( $_POST['_wpwa_default_duration'] ) ) {
+				$default = absint( $_POST['_wpwa_default_duration'] );
+				$product->update_meta_data( '_wpwa_default_duration', $default );
+			}
+			
+			if ( isset( $_POST['_wpwa_duration_discount'] ) ) {
+				$discount = absint( $_POST['_wpwa_duration_discount'] );
+				$product->update_meta_data( '_wpwa_duration_discount', min( $discount, 50 ) );
+			}
 		}
 	}
 
@@ -349,7 +438,11 @@ final class WPWA_Recurring {
 			$unit       = $product->get_meta( self::META_CYCLE_UNIT ) ?: 'month';
 			$grace_days = max( 0, (int) $product->get_meta( self::META_GRACE_PERIOD ) );
 			
-			$expiry_ts  = strtotime( "+{$length} {$unit}" );
+			$expiry_ts = apply_filters( 'wpwa_recurring_calculate_expiry', 
+			    strtotime( "+{$length} {$unit}" ), 
+			    $item, 
+			    $product 
+			);
 			$grace_ts   = $grace_days > 0 ? strtotime( "+{$grace_days} day", $expiry_ts ) : $expiry_ts;
 
 			// Check if this is a renewal

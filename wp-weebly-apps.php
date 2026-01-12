@@ -57,6 +57,7 @@ require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-auto-add.php'; 
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-emails.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-tracking.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-subscription-helper.php';
 
 register_uninstall_hook('uninstall.php', '');
 
