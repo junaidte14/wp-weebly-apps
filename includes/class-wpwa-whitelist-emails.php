@@ -23,13 +23,12 @@ final class WPWA_Whitelist_Emails {
 		// Hook into whitelist renewal
 		add_action( 'wpwa_whitelist_entry_renewed', [ __CLASS__, 'send_renewal_email' ], 10, 2 );
 		
+		// [ADDED] Hooks for expiry events
+		add_action( 'wpwa_whitelist_entry_expiring_soon', [ __CLASS__, 'send_expiring_email' ], 10, 1 );
+		add_action( 'wpwa_whitelist_entry_expired', [ __CLASS__, 'send_expired_email' ], 10, 1 );
+		
 		// Daily cron to check expiring entries
 		add_action( 'wpwa_check_expiring_whitelist', [ __CLASS__, 'check_expiring_entries' ] );
-		
-		// Schedule cron if not scheduled
-		if ( ! wp_next_scheduled( 'wpwa_check_expiring_whitelist' ) ) {
-			wp_schedule_event( time(), 'daily', 'wpwa_check_expiring_whitelist' );
-		}
 
 		// Settings page integration
 		add_action( 'admin_init', [ __CLASS__, 'register_settings' ] );
@@ -144,11 +143,9 @@ final class WPWA_Whitelist_Emails {
 		$days_before = absint( get_option( 'wpwa_email_expiring_days', 3 ) );
 		$warning_date = date( 'Y-m-d H:i:s', strtotime( "+{$days_before} days" ) );
 		$now = current_time( 'mysql' );
-
 		global $wpdb;
 		$table = $wpdb->prefix . WPWA_Whitelist::TABLE_NAME;
-
-		// Find entries expiring within warning period that haven't been warned yet
+		// Find entries expiring within warning period
 		$entries = $wpdb->get_results( $wpdb->prepare(
 			"SELECT * FROM `{$table}` 
 			 WHERE expiry_date IS NOT NULL 
@@ -161,7 +158,8 @@ final class WPWA_Whitelist_Emails {
 		), ARRAY_A );
 
 		foreach ( $entries as $entry ) {
-			self::send_expiring_email( $entry );
+			// [CHANGED] Trigger hook instead of calling direct method
+			do_action( 'wpwa_whitelist_entry_expiring_soon', $entry );
 		}
 
 		// Check for already expired entries
@@ -176,7 +174,8 @@ final class WPWA_Whitelist_Emails {
 			), ARRAY_A );
 
 			foreach ( $expired as $entry ) {
-				self::send_expired_email( $entry );
+				// [CHANGED] Trigger hook instead of calling direct method
+				do_action( 'wpwa_whitelist_entry_expired', $entry );
 			}
 		}
 	}
@@ -184,30 +183,26 @@ final class WPWA_Whitelist_Emails {
 	/**
 	 * Send expiring soon email
 	 */
-	private static function send_expiring_email( $entry ) {
-		if ( ! $entry['email'] ) {
+	public static function send_expiring_email( $entry ) {
+		if ( ! isset($entry['email']) || ! $entry['email'] ) {
 			return;
 		}
-
 		$days_left = floor( ( strtotime( $entry['expiry_date'] ) - time() ) / DAY_IN_SECONDS );
-
 		$subject = sprintf(
 			__( 'Your Whitelist Access Expires in %d Days - %s', 'wpwa' ),
 			$days_left,
 			get_bloginfo( 'name' )
 		);
-
 		$message = self::get_email_template( 'expiring', [
 			'customer_name' => $entry['customer_name'] ?? 'Valued Customer',
 			'days_left'     => $days_left,
 			'expiry_date'   => date_i18n( get_option( 'date_format' ), strtotime( $entry['expiry_date'] ) ),
 			'renewal_url'   => self::get_renewal_url( $entry ),
 		] );
-
 		self::send_email( $entry['email'], $subject, $message );
 		self::log_email_sent( $entry['id'], 'expiring', $entry['email'] );
-
 		// Mark as warned
+		global $wpdb; // Ensure global access
 		$wpdb->query( $wpdb->prepare(
 			"UPDATE `{$wpdb->prefix}" . WPWA_Whitelist::TABLE_NAME . "` 
 			 SET notes = CONCAT(COALESCE(notes, ''), '\n[expiring_email_sent: %s]')
@@ -220,25 +215,21 @@ final class WPWA_Whitelist_Emails {
 	/**
 	 * Send expired email
 	 */
-	private static function send_expired_email( $entry ) {
-		if ( ! $entry['email'] ) {
+	public static function send_expired_email( $entry ) {
+		if ( ! isset($entry['email']) || ! $entry['email'] ) {
 			return;
 		}
-
 		$subject = sprintf(
 			__( 'Your Whitelist Access Has Expired - %s', 'wpwa' ),
 			get_bloginfo( 'name' )
 		);
-
 		$message = self::get_email_template( 'expired', [
 			'customer_name' => $entry['customer_name'] ?? 'Valued Customer',
 			'expiry_date'   => date_i18n( get_option( 'date_format' ), strtotime( $entry['expiry_date'] ) ),
 			'renewal_url'   => self::get_renewal_url( $entry ),
 		] );
-
 		self::send_email( $entry['email'], $subject, $message );
 		self::log_email_sent( $entry['id'], 'expired', $entry['email'] );
-
 		// Mark as notified
 		global $wpdb;
 		$wpdb->query( $wpdb->prepare(

@@ -471,7 +471,7 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
 
 						<a href="<?php echo esc_url( add_query_arg( [
 							'add-to-cart' => $whitelist_product_id,
-							'weebly_user_id' => $user_id,
+							'user_id' => $user_id,
 							'duration' => '1'
 						], wc_get_checkout_url() ) ); ?>" 
 						   class="wpwa-btn wpwa-btn-secondary" 
@@ -560,7 +560,7 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
             if (purchaseBtn) {
                 const newUrl = checkoutUrl + 
                     '?add-to-cart=' + whitelistProductId + 
-                    '&weebly_user_id=' + encodeURIComponent(userId) + 
+                    '&user_id=' + encodeURIComponent(userId) + 
                     '&duration=' + duration;
                 purchaseBtn.href = newUrl;
                 
@@ -1363,43 +1363,16 @@ function wpwa_consolidated_add_cart_data($cart_item_data, $product_id, $variatio
     }
     // ===== WEEBLY USER DATA (FROM URL OR POST) =====
     // Check session first (set by wpwa_capture_weebly_params_from_url)
-    $weebly_user_id = WC()->session->get('wpwa_weebly_user_id');
+    $user_id = WC()->session->get('wpwa_user_id');
     // Fallback to POST data
-    if (!$weebly_user_id && isset($_POST['user_id'])) {
-        $weebly_user_id = sanitize_text_field($_POST['user_id']);
+    if (!$user_id && isset($_POST['user_id'])) {
+        $user_id = sanitize_text_field($_POST['user_id']);
     }
-    // Store ONLY as user_id (NOT weebly_user_id to avoid duplication)
-    if ($weebly_user_id) {
-        $cart_item_data['user_id'] = $weebly_user_id;
-    }
-    // ===== WEEBLY SITE DATA =====
-    if (isset($_POST['site_id'])) {
-        $cart_item_data['site_id'] = sanitize_text_field($_POST['site_id']);
-    }
-    // ===== WEEBLY ACCESS TOKEN =====
-    if (isset($_POST['access_token'])) {
-        $cart_item_data['access_token'] = sanitize_text_field($_POST['access_token']);
-    }
-    // ===== WEEBLY FINAL URL =====
-    if (isset($_POST['final_url'])) {
-        $cart_item_data['final_url'] = sanitize_text_field($_POST['final_url']);
+    // Store ONLY as user_id (NOT user_id to avoid duplication)
+    if ($user_id) {
+        $cart_item_data['user_id'] = $user_id;
     }
     return $cart_item_data;
-}
-
-/**
- * 3. Cart Display: Show selected duration in Cart/Checkout (Optional but recommended)
- */
-add_filter( 'woocommerce_get_item_data', 'wpwa_display_duration_in_cart', 10, 2 );
-function wpwa_display_duration_in_cart( $item_data, $cart_item ) {
-    if ( isset( $cart_item['subscription_duration'] ) ) {
-        $item_data[] = array(
-            'key'     => __( 'Duration', 'wpwa' ),
-            'value'   => sprintf( _n( '%s Cycle', '%s Cycles', $cart_item['subscription_duration'], 'wpwa' ), $cart_item['subscription_duration'] ),
-            'display' => '',
-        );
-    }
-    return $item_data;
 }
 
 /**
@@ -1407,18 +1380,18 @@ function wpwa_display_duration_in_cart( $item_data, $cart_item ) {
  * File: Add to woocommerce/woo-integration.php
  * 
  * Handles:
- * 1. Capturing weebly_user_id from query parameters
+ * 1. Capturing user_id from query parameters
  * 2. Adding it to cart item data
  * 3. Storing in order meta for auto-whitelist functionality
  */
 
 /**
- * Capture weebly_user_id and duration from query parameter and store in session
+ * Capture user_id and duration from query parameter and store in session
  */
 add_action('wp_loaded', 'wpwa_capture_weebly_params_from_url');
 function wpwa_capture_weebly_params_from_url() {
-    if (isset($_GET['weebly_user_id']) && !empty($_GET['weebly_user_id'])) {
-        WC()->session->set('wpwa_weebly_user_id', sanitize_text_field($_GET['weebly_user_id']));
+    if (isset($_GET['user_id']) && !empty($_GET['user_id'])) {
+        WC()->session->set('wpwa_user_id', sanitize_text_field($_GET['user_id']));
     }
     
     if (isset($_GET['duration']) && !empty($_GET['duration'])) {
@@ -1427,7 +1400,7 @@ function wpwa_capture_weebly_params_from_url() {
 }
 
 /**
- * Add weebly_user_id and duration to cart item data
+ * Add user_id and duration to cart item data
  */
 add_filter( 'woocommerce_add_cart_item_data', 'wpwa_add_whitelist_params_to_cart', 20, 3 );
 function wpwa_add_whitelist_params_to_cart( $cart_item_data, $product_id, $variation_id ) {
@@ -1440,11 +1413,11 @@ function wpwa_add_whitelist_params_to_cart( $cart_item_data, $product_id, $varia
 	}
 	
 	// Get from session
-	$weebly_user_id = WC()->session->get( 'wpwa_weebly_user_id' );
+	$user_id = WC()->session->get( 'wpwa_user_id' );
 	$duration = WC()->session->get( 'wpwa_subscription_duration' );
 	
-	if ( $weebly_user_id ) {
-		$cart_item_data['weebly_user_id'] = $weebly_user_id;
+	if ( $user_id ) {
+		$cart_item_data['user_id'] = $user_id;
 	}
 	
 	if ( $duration && $duration > 1 ) {
@@ -1455,7 +1428,7 @@ function wpwa_add_whitelist_params_to_cart( $cart_item_data, $product_id, $varia
 }
 
 /**
- * Display weebly_user_id in cart (optional, for transparency)
+ * Display user_id in cart (optional, for transparency)
  */
 add_filter('woocommerce_get_item_data', 'wpwa_consolidated_display_cart_item_data', 10, 2);
 function wpwa_consolidated_display_cart_item_data($item_data, $cart_item) {
@@ -1464,20 +1437,6 @@ function wpwa_consolidated_display_cart_item_data($item_data, $cart_item) {
         $item_data[] = [
             'key'   => __('Duration', 'wpwa'),
             'value' => sprintf(_n('%s Cycle', '%s Cycles', $cart_item['subscription_duration'], 'wpwa'), $cart_item['subscription_duration']),
-        ];
-    }
-    // Show user_id (NOT weebly_user_id - single source of truth)
-    if (isset($cart_item['user_id'])) {
-        $item_data[] = [
-            'key'   => __('Weebly User ID', 'wpwa'),
-            'value' => esc_html(substr($cart_item['user_id'], 0, 20) . '...'),
-        ];
-    }
-    // Show site_id
-    if (isset($cart_item['site_id'])) {
-        $item_data[] = [
-            'key'   => __('Site ID', 'wpwa'),
-            'value' => wc_clean($cart_item['site_id']),
         ];
     }
     return $item_data;
@@ -1544,7 +1503,7 @@ function wpwa_show_duration_discount_in_cart($price_html, $cart_item, $cart_item
 }
 
 /**
- * Store weebly_user_id and duration in order item meta
+ * Store user_id and duration in order item meta
  */
 add_action('woocommerce_checkout_create_order_line_item', 'wpwa_consolidated_save_order_item_meta', 20, 4);
 function wpwa_consolidated_save_order_item_meta($item, $cart_item_key, $values, $order) {
@@ -1553,7 +1512,7 @@ function wpwa_consolidated_save_order_item_meta($item, $cart_item_key, $values, 
         $item->add_meta_data('_wpwa_subscription_duration', $values['subscription_duration'], true);
         $item->add_meta_data('_wpwa_prepaid_cycles', $values['subscription_duration'], true);
     }
-    // Save user_id (SINGLE SOURCE - not weebly_user_id)
+    // Save user_id (SINGLE SOURCE - not user_id)
     if (isset($values['user_id'])) {
         $item->add_meta_data('user_id', $values['user_id'], true);
     }
@@ -1572,7 +1531,7 @@ function wpwa_consolidated_save_order_item_meta($item, $cart_item_key, $values, 
 }
 
 /**
- * Store weebly_user_id in order meta (for auto-whitelist to work)
+ * Store user_id in order meta (for auto-whitelist to work)
  */
 add_action('woocommerce_checkout_order_processed', 'wpwa_save_user_id_to_order_meta', 10, 1);
 function wpwa_save_user_id_to_order_meta($order_id) {
@@ -1588,7 +1547,7 @@ function wpwa_save_user_id_to_order_meta($order_id) {
         $user_id = $item->get_meta('user_id');
         if ($user_id) {
             // Save to order meta
-            $order->update_meta_data('weebly_user_id', $user_id);
+            $order->update_meta_data('user_id', $user_id);
             $order->save();
             // Add order note
             $order->add_order_note(sprintf(
@@ -1599,7 +1558,7 @@ function wpwa_save_user_id_to_order_meta($order_id) {
         }
     }   
     // Clear session
-    WC()->session->__unset('wpwa_weebly_user_id');
+    WC()->session->__unset('wpwa_user_id');
     WC()->session->__unset('wpwa_subscription_duration');
 }
 

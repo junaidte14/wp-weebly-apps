@@ -78,10 +78,6 @@ final class WPWA_Recurring {
 		add_action( 'woocommerce_admin_process_product_object', [ $this, 'save_admin_fields' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_admin_assets' ] );
 
-		// Pricing
-		add_filter( 'woocommerce_product_get_price', [ $this, 'filter_product_price' ], 20, 2 );
-		add_filter( 'woocommerce_product_variation_get_price', [ $this, 'filter_product_price' ], 20, 2 );
-
 		// Order workflow
 		add_action( 'woocommerce_order_status_completed', [ $this, 'handle_order_completed' ], 10, 2 );
 		add_action( 'woocommerce_checkout_create_order_line_item', [ $this, 'save_order_item_meta' ], 10, 4 );
@@ -357,19 +353,6 @@ final class WPWA_Recurring {
 			.wpwa-recurring-section { border-top: 1px solid #eee; padding-top: 12px; margin-top: 12px; }
 			.wpwa-recurring-fields { padding-left: 12px; border-left: 3px solid #2271b1; margin-top: 12px; }
 		' );
-	}
-
-	/* =================================================================
-	 *   PRICING FILTERS
-	 * ================================================================= */
-	
-	public function filter_product_price( $price, $product ) {
-		if ( 'yes' !== $product->get_meta( self::META_KEY_FLAG ) ) {
-			return $price;
-		}
-
-		$cycle_price = $product->get_meta( self::META_CYCLE_PRICE );
-		return $cycle_price !== '' ? wc_format_decimal( $cycle_price ) : $price;
 	}
 
 	/* =================================================================

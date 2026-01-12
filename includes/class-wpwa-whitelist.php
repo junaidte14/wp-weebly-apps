@@ -226,6 +226,7 @@ final class WPWA_Whitelist {
 			// Insert
 			$wpdb->insert( $table, $data );
 			$entry_id = $wpdb->insert_id;
+			do_action( 'wpwa_whitelist_entry_created', $entry_id, $data );
 		}
 
 		wp_send_json_success( [
