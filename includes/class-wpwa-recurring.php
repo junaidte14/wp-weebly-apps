@@ -90,7 +90,7 @@ final class WPWA_Recurring {
 		// Front-end UX
 		add_action( 'woocommerce_single_product_summary', [ $this, 'print_recurring_badge' ], 25 );
 		add_action( 'woocommerce_single_product_summary', [ $this, 'maybe_hide_add_to_cart' ], 1 );
-		add_filter( 'woocommerce_is_purchasable', [ $this, 'maybe_block_repurchase' ], 20, 2 );
+		//add_filter( 'woocommerce_is_purchasable', [ $this, 'maybe_block_repurchase' ], 20, 2 );
 		add_action( 'woocommerce_single_product_summary', [ $this, 'show_licence_status' ], 10 );
 		
 		// My Account integration
