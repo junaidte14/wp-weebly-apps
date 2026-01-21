@@ -61,7 +61,7 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
 			$apps_covered = ceil( $whitelist_price_float / $current_price_float );
 			if ( $apps_covered > 1 ) {
 				$whitelist_savings = sprintf( 
-					__( 'Access to ALL our apps (equivalent to %d+ apps!)', 'wpwa' ), 
+					__( 'Access to ALL our Weebly apps (18 apps!)', 'wpwa' ), 
 					$apps_covered 
 				);
 			}
@@ -330,7 +330,9 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
 	<div class="wpwa-checkout-container">
 		<div class="wpwa-checkout-header">
 			<h1><?php esc_html_e( 'Choose Your Access Plan', 'wpwa' ); ?></h1>
-			<p><?php esc_html_e( 'Select the option that works best for you', 'wpwa' ); ?></p>
+			<p style="font-weight: bold;"><?php esc_html_e( 'User ID: ', 'wpwa' ); echo $user_id;?></p>
+            <p style="font-weight: bold;"><?php esc_html_e( 'Site ID: ', 'wpwa' ); echo $site_id;?></p>
+            <p><?php esc_html_e( 'Select the option that works best for you', 'wpwa' ); ?></p>
 		</div>
 
 		<div class="wpwa-options-grid">
@@ -360,6 +362,7 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
 
 					<ul class="wpwa-features">
 						<li><?php esc_html_e( 'Full access to this app', 'wpwa' ); ?></li>
+                        <li><?php esc_html_e( 'Single payment => forever access', 'wpwa' ); ?></li>
 						<li><?php esc_html_e( 'Regular updates & support', 'wpwa' ); ?></li>
 						<li><?php esc_html_e( 'Cancel anytime', 'wpwa' ); ?></li>
 					</ul>
@@ -436,8 +439,8 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
                                                     ? esc_html( $wl_cycle_unit ) 
                                                     : esc_html( $wl_cycle_unit . 's' );
                                                 
-                                                // Show discount badge for 6+ cycles
-                                                if ( $duration >= 6 && $duration_discount > 0 ) {
+                                                // Show discount badge for 2+ cycles
+                                                if ( $duration >= 2 && $duration_discount > 0 ) {
                                                     echo '<span class="wpwa-discount-badge">-' . $duration_discount . '%</span>';
                                                 }
                                                 ?>
@@ -464,7 +467,7 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
 
 						<ul class="wpwa-features">
 							<li><?php esc_html_e( 'Access to ALL our Weebly apps', 'wpwa' ); ?></li>
-							<li><?php esc_html_e( 'Free installation for any app', 'wpwa' ); ?></li>
+							<li><?php esc_html_e( 'Free installation on any site associated to a Weebly User ID (upto 3 User IDs)', 'wpwa' ); ?></li>
 							<li><?php esc_html_e( 'Priority support', 'wpwa' ); ?></li>
 							<li><?php esc_html_e( 'Early access to new apps', 'wpwa' ); ?></li>
 						</ul>
@@ -516,8 +519,8 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
         function calculatePrice(duration) {
             let totalPrice = basePrice * duration;
             
-            // Apply discount for 6+ cycles
-            if (duration >= 6 && discountPercent > 0) {
+            // Apply discount for 2+ cycles
+            if (duration >= 2 && discountPercent > 0) {
                 const discount = (totalPrice * discountPercent) / 100;
                 totalPrice -= discount;
             }
@@ -529,7 +532,7 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
         * Format price for display
         */
         function formatPrice(price) {
-            return '$' + price.toFixed(2);
+            return '€' + price.toFixed(2);
         }
         
         /**
@@ -1252,8 +1255,8 @@ function wpwa_render_duration_selector_on_product() {
             <?php foreach ($durations as $duration): 
                 $total_price = $base_price * $duration;
                 
-                // Apply discount for 6+ cycles
-                if ($duration >= 6 && $discount > 0) {
+                // Apply discount for 2+ cycles
+                if ($duration >= 2 && $discount > 0) {
                     $discount_amount = ($total_price * $discount) / 100;
                     $total_price -= $discount_amount;
                 }
@@ -1330,8 +1333,8 @@ function wpwa_render_duration_selector_on_product() {
                 
                 let total = basePrice * duration;
                 
-                // Apply discount for 6+ cycles
-                if (duration >= 6 && discount > 0) {
+                // Apply discount for 2+ cycles
+                if (duration >= 2 && discount > 0) {
                     total -= (total * discount / 100);
                 }
                 
@@ -1470,8 +1473,8 @@ function wpwa_consolidated_adjust_cart_prices($cart) {
         $base_price = floatval($product->get_price());
         // Calculate total price
         $total_price = $base_price * $duration;
-        // Apply discount for 6+ cycles
-        if ($duration >= 6) {
+        // Apply discount for 2+ cycles
+        if ($duration >= 2) {
             $discount = absint(get_post_meta($product_id, '_wpwa_duration_discount', true));
             if ($discount > 0) {
                 $discount_amount = ($total_price * $discount) / 100;
