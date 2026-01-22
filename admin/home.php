@@ -177,7 +177,7 @@ jQuery(document).ready(function($) {
     }
     
     function formatCurrency(value) {
-        return '€' + Number(value).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
+        return '$' + Number(value).toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
     }
     
     function formatNumber(value) {
@@ -250,7 +250,7 @@ jQuery(document).ready(function($) {
                                 beginAtZero: true,
                                 ticks: {
                                     callback: function(value) {
-                                        return '€' + value.toFixed(0);
+                                        return '$' + value.toFixed(0);
                                     }
                                 }
                             }

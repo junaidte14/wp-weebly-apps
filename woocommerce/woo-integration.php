@@ -532,7 +532,7 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
         * Format price for display
         */
         function formatPrice(price) {
-            return '€' + price.toFixed(2);
+            return '$' + price.toFixed(2);
         }
         
         /**
