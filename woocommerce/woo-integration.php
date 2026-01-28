@@ -362,7 +362,7 @@ function woowa_paymentProcessForm( $params, $pr_id, $final_url, $access_token ) 
 
 					<ul class="wpwa-features">
 						<li><?php esc_html_e( 'Full access to this app', 'wpwa' ); ?></li>
-                        <li><?php esc_html_e( 'Single payment => forever access', 'wpwa' ); ?></li>
+                        <li><?php esc_html_e( 'Single website licence', 'wpwa' ); ?></li>
 						<li><?php esc_html_e( 'Regular updates & support', 'wpwa' ); ?></li>
 						<li><?php esc_html_e( 'Cancel anytime', 'wpwa' ); ?></li>
 					</ul>
@@ -1579,4 +1579,32 @@ function wpwa_adjust_expiry_for_prepaid_duration($expiry_timestamp, $item, $prod
     // Calculate total duration
     $total_length = $cycle_length * $duration;   
     return strtotime("+{$total_length} {$cycle_unit}");
+}
+
+add_filter( 'woocommerce_get_price_html', 'wpwa_custom_recurring_price_display', 10, 2 );
+
+function wpwa_custom_recurring_price_display( $price, $product ) {
+    // 1. Check if the product is a recurring product using your class constant
+    $is_recurring = get_post_meta( $product->get_id(), '_wpwa_is_recurring', true );
+
+    if ( 'yes' !== $is_recurring ) {
+        return $price;
+    }
+
+    // 2. Fetch the cycle details from meta
+    $length = get_post_meta( $product->get_id(), '_wpwa_cycle_length', true );
+    $unit   = get_post_meta( $product->get_id(), '_wpwa_cycle_unit', true );
+
+    if ( ! $length || ! $unit ) {
+        return $price;
+    }
+
+    // 3. Format the unit for display (e.g., "month" becomes "monthly" or just "/ month")
+    // Simple logic: if length is 1, show "/ unit", if > 1, show "/ length units"
+    $cycle_display = ( (int) $length === 1 ) 
+        ? sprintf( '/ %s', $unit ) 
+        : sprintf( '/ %s %ss', $length, $unit );
+
+    // 4. Return the filtered price HTML
+    return sprintf( '<span class="wpwa-recurring-price">%s %s</span>', $price, $cycle_display );
 }
