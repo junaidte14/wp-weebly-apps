@@ -18,6 +18,14 @@ function wpwa_admin_actions() {
     add_submenu_page( $wpwa_plugin_name, __('WPWA Manage Orders', 'wpwa'), 'Manage Orders', 'administrator', 'wpwa_manage_orders', 'display_wpwa_manage_orders_page');
     add_submenu_page( $wpwa_plugin_name, __('Recurring Orders', 'wpwa'), __('Recurring Orders', 'wpwa'), 'administrator', 'wpwa_recurring_orders', 'wpwa_render_recurring_orders_page'
     );
+    add_submenu_page(
+        $wpwa_plugin_name,
+        __('WC Migration', 'wpwa'),
+        __('WC Migration', 'wpwa'),
+        'administrator',
+        'wpwa_wc_migration',
+        'wpwa_render_migration_dashboard'
+    );
 }
 
 /* Parent Menu Fix */

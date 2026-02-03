@@ -58,6 +58,10 @@ require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-auto-a
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-emails.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-wpwa-whitelist-tracking.php';
 
+require_once plugin_dir_path(__FILE__) . 'admin/wc-migration-page.php';
+require_once plugin_dir_path(__FILE__) . 'admin/wc-migration-functions.php';
+require_once plugin_dir_path(__FILE__) . 'admin/install-migration-tables.php';
+
 register_uninstall_hook('uninstall.php', '');
 
 add_action( 'parse_request', function () {
